@@ -1,0 +1,25 @@
+---
+source: crates/tm-ui/src/tests/snapshots.rs
+expression: after_deco(&h.draw_text())
+---
+Sprite ui_sel_tl 256,236 3x3 #FFFFFFFF
+Sprite ui_sel_t 259,236 122x3 #FFFFFFFF
+Sprite ui_sel_tr 381,236 3x3 #FFFFFFFF
+Sprite ui_sel_l 256,239 3x18 #FFFFFFFF
+Sprite ui_sel_c 259,239 122x18 #FFFFFFFF
+Sprite ui_sel_r 381,239 3x18 #FFFFFFFF
+Sprite ui_sel_bl 256,257 3x3 #FFFFFFFF
+Sprite ui_sel_b 259,257 122x3 #FFFFFFFF
+Sprite ui_sel_br 381,257 3x3 #FFFFFFFF
+Sprite ui_menu_cursor 260,244 8x9 #FFFFFFFF
+Sprite '続'16 288,239 16x16 #FFFFFFFF
+Sprite 'き'16 305,239 14x15 #FFFFFFFF
+Sprite 'か'16 321,239 15x15 #FFFFFFFF
+Sprite 'ら'16 338,239 12x15 #FFFFFFFF
+Sprite '初'16 288,271 15x16 #FFFFFFFF
+Sprite 'め'16 305,271 14x15 #FFFFFFFF
+Sprite 'か'16 321,271 15x15 #FFFFFFFF
+Sprite 'ら'16 338,271 12x15 #FFFFFFFF
+Sprite btn_key_z 596,340 16x16 #FFFFFFFF
+Sprite '選'12 612,341 12x12 #FFFFFFFF
+Sprite 'ぶ'12 624,340 12x12 #FFFFFFFF

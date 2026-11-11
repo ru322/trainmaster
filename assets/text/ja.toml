@@ -1,0 +1,277 @@
+# 画面に出す全文言 (13 §7)。書き方は 01 §10.3、形式と検査は 15 §6。
+
+[title]
+subtitle = "電車の会社を大きくしよう!"
+continue = "続きから"
+new_game = "初めから"
+hint = "{btn:confirm}選ぶ"
+new_confirm1 = "初めから遊ぶ?\n今の会社はなくなるよ"
+
+[hud]
+income = "1秒で {money}"
+company_level = "会社レベル {n}"
+goal = "1無量大数円を目指そう!"
+goal_done = "1無量大数円に届いた!"
+
+[hud.info]
+station = "駅"
+waiting = "待っている人"
+not_connected = "まだつながっていないよ"
+cars = "{n}両"
+line = "路線 {n}"
+trains = "電車 {n}本"
+pass_count = "通過する駅 {n}"
+slots = "路線 {used}/{slots}"
+
+[chip]
+build = "{btn:build}路線"
+panel = "{btn:tab}レベルアップ"
+
+[panel]
+level = "Lv{n}"
+level_range = "Lv{a}〜{b}"
+need_more = "あと {money}"
+limit_company = "今はここまで"
+limit_intrinsic = "一番上だよ"
+limit_platform = "先にホームを長くしよう"
+limit_capacity = "先に待てる人数を上げよう"
+locked = "会社レベル {n}で使えるよ"
+no_station = "先に駅を路線につなごう"
+no_line = "先に路線を作ろう"
+new = "NEW"
+recommend = "おすすめ"
+levelup = "レベルアップ!"
+# {btn:max} から次のボタンの前までを BuyMaxHint の枠にする (13 §3.13)。
+hint = "{btn:confirm}1つ {btn:max}MAX {btn:cancel}閉じる"
+
+[panel.tab]
+station = "駅"
+train = "電車"
+line = "路線"
+
+[panel.scope]
+all = "全部"
+station = "この駅だけ"
+line = "この路線だけ"
+company = "会社で1つ"
+
+[param.s1]
+name = "お客さんの数"
+desc = "お客さんがたくさん来るよ"
+
+[param.s2]
+name = "運賃"
+desc = "1人からもらうお金が増えるよ"
+
+[param.s3]
+name = "駅で待てる人数"
+desc = "駅で待てる人が増えるよ"
+
+[param.s4]
+name = "ホームの長さ"
+desc = "長い電車が止まれるよ"
+
+[param.t1]
+name = "電車の速さ"
+desc = "電車が速く走るよ"
+
+[param.t2]
+name = "つめこみ"
+desc = "電車にたくさん乗れるよ"
+
+[param.t3]
+name = "乗り降りの速さ"
+desc = "乗り降りが速くなるよ"
+
+[param.t4]
+name = "1両に乗れる人数"
+desc = "1両に乗れる人が増えるよ"
+
+[param.t5]
+name = "車両の数"
+desc = "電車が長くなるよ"
+
+[param.r1]
+name = "電車の数"
+desc = "路線を走る電車が増えるよ"
+
+[param.r2]
+name = "路線の数"
+desc = "路線をもう1本作れるよ"
+
+[param.r3]
+name = "人気"
+desc = "みんなが乗りたがるよ"
+
+[build]
+hint = "{btn:bend}曲がり方 {btn:cancel}戻る"
+choose_hint = "{btn:confirm}選ぶ {btn:cancel}戻る"
+end_hint = "{btn:cancel}戻る"
+which_hint = "{btn:move}変える {btn:confirm}選ぶ {btn:cancel}戻る"
+cost = "線路のお金 {money}"
+cost_short = "お金が足りないよ。あと {money}"
+
+[build.choose]
+title = "どっちにする?"
+create = "路線を作る"
+extend = "路線を延ばす"
+
+[build.create]
+first = "最初の駅を選んでね"
+next = "次の駅を選んでね"
+finish = "もう一度{btn:confirm}で完成"
+
+[build.extend]
+end = "路線のはしの駅を選んでね"
+which = "どの路線を延ばす?"
+new = "つなぐ駅を選んでね"
+
+[build.confirm]
+title = "あとで消せないよ。いい?"
+pass = "通過する駅があるよ"
+
+[common]
+yes = "はい"
+no = "いいえ"
+
+[err]
+money = "お金が足りないよ"
+limit_company = "今はここまで。会社レベルを上げよう"
+limit_intrinsic = "もう一番上だよ"
+limit_platform = "先にホームを長くしよう"
+limit_capacity = "先に駅で待てる人数を上げよう"
+locked = "会社レベル {n}で使えるよ"
+no_slot = "路線の数を上げよう"
+not_connected = "先に駅を路線につなごう"
+no_line = "先に路線を作ろう"
+duplicate = "別の駅を選んでね"
+already_on_line = "その駅はもうつながっているよ"
+too_few = "駅を2つ選んでね"
+not_station = "駅を選んでね"
+not_end = "路線のはしの駅を選んでね"
+generic = "今はできないよ"
+tutorial = "今はここを選んでね"
+max_outside = "MAXはレベルアップの中で使うよ"
+
+[notice]
+unit = "{unit}({yomi})に届いたよ!"
+pass = "ホームが短いので通過するよ"
+company_up = "会社レベル {n}!"
+company_up2 = "会社が大きくなったよ!"
+unlocked = "新しく使えるようになったよ"
+goal = "1無量大数円!"
+
+[settings]
+title = "設定"
+continue = "続ける"
+music = "音楽の大きさ"
+sound = "音の大きさ"
+replay = "説明をもう一度見る"
+show = "説明を出す"
+on = "する"
+off = "しない"
+quit = "ゲームを終わる"
+reset = "最初からやり直す"
+replay_empty = "まだないよ"
+
+[reset]
+confirm1 = "最初からやり直す?\n今の会社はなくなるよ"
+confirm2 = "本当にいい?"
+
+[quit]
+confirm1 = "ゲームを終わる?\n続きはまた遊べるよ"
+confirm1_nosave = "ゲームを終わる?\n今の会社はなくなるよ"
+confirm2 = "本当に終わる?"
+saving = "保存しているよ"
+power_off = "電源を切るよ\n画面が消えたら電源を抜いてね"
+
+[expl]
+next = "{btn:confirm}次へ"
+close = "{btn:confirm}閉じる"
+page = "{n}/{m}"
+
+[tut.s01]
+title = "社長になった"
+p1 = "きみは電車の会社の社長だ!"
+p2 = "駅と駅を線路でつないで\nお金をかせごう"
+
+[tut.s02]
+title = "駅を選ぶ"
+p1 = "駅を選んでみよう"
+g1 = "{btn:move}で枠を駅に合わせてね"
+
+[tut.s03]
+title = "路線を作る"
+p1 = "駅と駅を線路でつなごう"
+p2 = "{btn:build}で路線を作るよ"
+p3 = "駅を2つ選んでね"
+g1 = "駅を2つ選んで路線を作ろう"
+
+[tut.s04]
+title = "お金が入る"
+w = "電車が走るよ。見ていよう"
+p1 = "お客さんが駅に着くと\nお金が入るよ"
+
+[tut.s05]
+title = "路線を延ばす"
+p1 = "路線を延ばして\n3つ目の駅につなごう"
+p2 = "{btn:build}で「路線を延ばす」を選ぶよ"
+g1 = "はしの駅から3つ目の駅へ延ばそう"
+
+[tut.s06]
+title = "運賃を上げる"
+w = "お金がたまるのを待とう"
+p1 = "運賃を上げよう"
+p2 = "全部の駅の運賃が上がるよ"
+g1 = "「運賃」を上げよう"
+
+[tut.s07]
+title = "MAXとおすすめ"
+p1 = "MAXで買えるだけ買うよ"
+p2 = "光っているのがおすすめ"
+g1 = "{btn:max}でMAX! {btn:recommend}でおすすめ"
+
+[tut.s08]
+title = "会社ゲージ"
+p1 = "ゲージがいっぱいになると\n会社が大きくなるよ"
+
+[tut.s09]
+title = "2本目の路線"
+p1 = "新しい駅ができた!"
+p2 = "路線の数を上げて\n2本目の路線を作ろう"
+p3 = "お客さんは乗り換えもするよ"
+p4 = "これからは線路を引くと\nお金がかかるよ"
+g1 = "「路線の数」を上げよう"
+g2 = "{btn:build}で2本目の路線を作ろう"
+
+[tut.s10]
+title = "ホームと電車の長さ"
+p1 = "長い電車は\n短いホームには止まれないよ"
+p2 = "先にホームを長くしよう"
+g1 = "「ホームの長さ」を上げよう"
+g2 = "「車両の数」を上げよう"
+
+[tut.s11]
+title = "電車を増やす"
+p1 = "電車を増やそう"
+p2 = "人気が高い路線は\nみんなが乗りたがるよ"
+g1 = "「電車の数」を上げよう"
+g2 = "「人気」を上げよう"
+
+[tut.s12]
+title = "全部使える"
+p1 = "乗り降りを速くしよう"
+p2 = "電車にたくさんつめこもう"
+p3 = "これで全部使えるよ!"
+g1 = "「乗り降りの速さ」を上げよう"
+g2 = "「つめこみ」を上げよう"
+
+[tut.s14]
+title = "1無量大数円"
+p1 = "1無量大数(むりょうたいすう)円!\nきみは電車王だ!"
+
+[tut.s15]
+title = "設定"
+p1 = "音楽と音の大きさを変えられるよ"
+p2 = "最初からやり直すことも\nできるよ"
+p3 = "ゲームを終わるときは\nここから選んでね"

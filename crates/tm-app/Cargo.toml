@@ -1,0 +1,33 @@
+[package]
+name = "tm-app"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[features]
+default = ["sdl"]
+sdl = ["dep:tm-platform-sdl"]
+devtools = []
+
+[dependencies]
+tm-core = { path = "../tm-core" }
+tm-input = { path = "../tm-input" }
+tm-ui = { path = "../tm-ui" }
+tm-tutorial = { path = "../tm-tutorial" }
+tm-assets = { path = "../tm-assets" }
+tm-platform-api = { path = "../tm-platform-api" }
+tm-platform-sdl = { path = "../tm-platform-sdl", optional = true }
+log = "0.4"
+getrandom = "0.4"
+serde = { version = "1", features = ["derive"] }
+ron = "0.12"
+
+[dev-dependencies]
+tm-platform-api = { path = "../tm-platform-api", features = ["headless"] }
+tm-ui = { path = "../tm-ui", features = ["test-support"] }
+
+[[bin]]
+name = "trainmaster"
+path = "src/bin/trainmaster/main.rs"
+required-features = ["sdl"]

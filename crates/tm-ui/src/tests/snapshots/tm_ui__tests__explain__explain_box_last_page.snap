@@ -1,0 +1,38 @@
+---
+source: crates/tm-ui/src/tests/explain.rs
+expression: last
+---
+Sprite ui_popup_tl 120,240 4x4 #FFFFFFFF
+Sprite ui_popup_t 124,240 392x4 #FFFFFFFF
+Sprite ui_popup_tr 516,240 4x4 #FFFFFFFF
+Sprite ui_popup_l 120,244 4x68 #FFFFFFFF
+Sprite ui_popup_c 124,244 392x68 #FFFFFFFF
+Sprite ui_popup_r 516,244 4x68 #FFFFFFFF
+Sprite ui_popup_bl 120,312 4x4 #FFFFFFFF
+Sprite ui_popup_b 124,312 392x4 #FFFFFFFF
+Sprite ui_popup_br 516,312 4x4 #FFFFFFFF
+Sprite '駅'16 132,250 16x15 #FFFFFFFF
+Sprite 'と'16 150,249 12x15 #FFFFFFFF
+Sprite '駅'16 164,250 16x15 #FFFFFFFF
+Sprite 'を'16 181,249 14x15 #FFFFFFFF
+Sprite '線'16 196,249 16x16 #FFFFFFFF
+Sprite '路'16 212,249 16x16 #FFFFFFFF
+Sprite 'で'16 229,251 15x13 #FFFFFFFF
+Sprite 'つ'16 245,251 14x12 #FFFFFFFF
+Sprite 'な'16 261,249 15x15 #FFFFFFFF
+Sprite 'い'16 277,251 14x13 #FFFFFFFF
+Sprite 'で'16 293,251 15x13 #FFFFFFFF
+Sprite 'お'16 133,269 15x15 #FFFFFFFF
+Sprite '金'16 148,269 16x15 #FFFFFFFF
+Sprite 'を'16 165,269 14x15 #FFFFFFFF
+Sprite 'か'16 181,269 15x15 #FFFFFFFF
+Sprite 'せ'16 196,270 16x14 #FFFFFFFF
+Sprite 'ご'16 213,269 15x15 #FFFFFFFF
+Sprite 'う'16 230,269 12x15 #FFFFFFFF
+Sprite btn_key_z 456,292 16x16 #A6AEC0FF
+Sprite '閉'12 472,293 12x12 #A6AEC0FF
+Sprite 'じ'12 486,293 9x11 #A6AEC0FF
+Sprite 'る'12 497,293 10x11 #A6AEC0FF
+Sprite '2'12 426,293 6x11 #A6AEC0FF
+Sprite '/'12 432,292 6x13 #A6AEC0FF
+Sprite '2'12 438,293 6x11 #A6AEC0FF

@@ -1,0 +1,16 @@
+[package]
+name = "tm-assets"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+tm-platform-api = { path = "../tm-platform-api" }
+bytemuck = "1"
+
+[build-dependencies]
+png = "0.18"
+
+[dev-dependencies]
+tm-numeric = { path = "../tm-numeric" }

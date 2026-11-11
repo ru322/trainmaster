@@ -1,0 +1,47 @@
+// 駅ができた。三角波の「ポン」と上がる音と、サイン波のきらきら。
+SoundDef(
+    format: 1,
+    timing: RowMs(25),
+    master: 170,
+    imports: [],
+    instruments: {
+        "pon": (wave: Triangle, env: (attack_ms: 0, decay_ms: 150, sustain: 0, release_ms: 0), volume: 100, slide: Some((cents_per_sec: 20000, ms: 60))),
+        "kira": (wave: Sine, env: (attack_ms: 0, decay_ms: 250, sustain: 0, release_ms: 0), volume: 100),
+    },
+    channels: [
+        (name: "p1", volume: 15, tonal: true),
+        (name: "p2", volume: 15, tonal: true),
+    ],
+    patterns: {
+        "c0": (rows: [
+            "C-5 pon v15",
+            "... .. ...",
+            "... .. ...",
+            "... .. ...",
+            "... .. ...",
+            "... .. ...",
+            "... .. ...",
+            "... .. ...",
+            "... .. ...",
+            "... .. ...",
+        ]),
+        "c1": (rows: [
+            "... .. ...",
+            "... .. ...",
+            "... .. ...",
+            "... .. ...",
+            "C-6 kira v14",
+            "E-6 kira v12",
+            "G-6 kira v10",
+            "C-7 kira v08",
+            "E-7 kira v06",
+            "G-7 kira v05",
+        ]),
+    },
+    order: [
+        (patterns: ["c0", "c1"], transpose: 0),
+    ],
+    loop_to: None,
+    tail_ms: 250,
+    allow_clip: false,
+)

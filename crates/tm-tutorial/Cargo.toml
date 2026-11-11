@@ -1,0 +1,15 @@
+[package]
+name = "tm-tutorial"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+tm-core = { path = "../tm-core" }
+tm-assets = { path = "../tm-assets" }
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+ron = "0.12"
+tm-simrun = { path = "../../tools/tm-simrun" }

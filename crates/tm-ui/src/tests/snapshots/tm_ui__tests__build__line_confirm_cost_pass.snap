@@ -1,0 +1,56 @@
+---
+source: crates/tm-ui/src/tests/build.rs
+expression: "&text[i..]"
+---
+Sprite ui_win_tl 168,236 4x4 #FFFFFFFF
+Sprite ui_win_t 172,236 296x4 #FFFFFFFF
+Sprite ui_win_tr 468,236 4x4 #FFFFFFFF
+Sprite ui_win_l 168,240 4x72 #FFFFFFFF
+Sprite ui_win_c 172,240 296x72 #FFFFFFFF
+Sprite ui_win_r 468,240 4x72 #FFFFFFFF
+Sprite ui_win_bl 168,312 4x4 #FFFFFFFF
+Sprite ui_win_b 172,312 296x4 #FFFFFFFF
+Sprite ui_win_br 468,312 4x4 #FFFFFFFF
+Sprite 'あ'12 185,243 10x11 #FFFFFFFF
+Sprite 'と'12 197,243 10x11 #FFFFFFFF
+Sprite 'で'12 208,244 12x10 #FFFFFFFF
+Sprite '消'12 220,242 12x13 #FFFFFFFF
+Sprite 'せ'12 232,243 12x11 #FFFFFFFF
+Sprite 'な'12 244,243 12x11 #FFFFFFFF
+Sprite 'い'12 257,244 10x10 #FFFFFFFF
+Sprite 'よ'12 269,243 10x11 #FFFFFFFF
+Sprite '。'12 280,250 5x4 #FFFFFFFF
+Sprite 'い'12 293,244 10x10 #FFFFFFFF
+Sprite 'い'12 305,244 10x10 #FFFFFFFF
+Sprite '?'12 316,243 6x11 #FFFFFFFF
+Sprite '線'12 184,258 12x13 #FFFFFFFF
+Sprite '路'12 196,258 12x13 #FFFFFFFF
+Sprite 'の'12 208,259 12x11 #FFFFFFFF
+Sprite 'お'12 220,259 12x11 #FFFFFFFF
+Sprite '金'12 232,258 12x12 #FFFFFFFF
+Sprite '3'12 250,259 6x11 #FFFFFFFF
+Sprite '円'12 257,259 10x12 #FFFFFFFF
+Sprite '通'12 184,275 12x12 #FFE066FF
+Sprite '過'12 196,275 12x12 #FFE066FF
+Sprite 'す'12 208,275 12x11 #FFE066FF
+Sprite 'る'12 221,275 10x11 #FFE066FF
+Sprite '駅'12 232,275 12x12 #FFE066FF
+Sprite 'が'12 244,274 12x12 #FFE066FF
+Sprite 'あ'12 257,275 10x11 #FFE066FF
+Sprite 'る'12 269,275 10x11 #FFE066FF
+Sprite 'よ'12 281,275 10x11 #FFE066FF
+Sprite 'い'12 243,294 10x10 #FFFFFFFF
+Sprite 'い'12 255,294 10x10 #FFFFFFFF
+Sprite 'え'12 266,293 11x11 #FFFFFFFF
+Sprite ui_sel_tl 344,290 3x3 #FFFFFFFF
+Sprite ui_sel_t 347,290 66x3 #FFFFFFFF
+Sprite ui_sel_tr 413,290 3x3 #FFFFFFFF
+Sprite ui_sel_l 344,293 3x14 #FFFFFFFF
+Sprite ui_sel_c 347,293 66x14 #FFFFFFFF
+Sprite ui_sel_r 413,293 3x14 #FFFFFFFF
+Sprite ui_sel_bl 344,307 3x3 #FFFFFFFF
+Sprite ui_sel_b 347,307 66x3 #FFFFFFFF
+Sprite ui_sel_br 413,307 3x3 #FFFFFFFF
+Sprite ui_menu_cursor 348,296 8x9 #FFFFFFFF
+Sprite 'は'12 369,293 11x11 #FFFFFFFF
+Sprite 'い'12 381,294 10x10 #FFFFFFFF

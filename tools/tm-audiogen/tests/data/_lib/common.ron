@@ -1,0 +1,15 @@
+LibDef(
+    format: 1,
+    instruments: {
+        "lead": (wave: Pulse(duty: D50), env: (attack_ms: 2, decay_ms: 120, sustain: 70, release_ms: 80), volume: 60),
+        "harm": (wave: Pulse(duty: D12), env: (attack_ms: 2, decay_ms: 80, sustain: 50, release_ms: 60), volume: 50,
+                 duty_seq: Some((steps: [D12, D25, D50, D75], step_ms: 30, looped: true))),
+        "bass": (wave: Triangle, env: (attack_ms: 0, decay_ms: 0, sustain: 100, release_ms: 30), volume: 100),
+        "kick": (wave: Noise(mode: Long), env: (attack_ms: 0, decay_ms: 60, sustain: 0, release_ms: 0), volume: 80),
+        "hat": (wave: Noise(mode: Short), env: (attack_ms: 0, decay_ms: 25, sustain: 0, release_ms: 0), volume: 40),
+    },
+    patterns: {
+        "theme": (rows: ["C-5 lead v15", "... .. ...", "A-5 .. v12", "=== .. ...", "G-5 .. v15", "... .. ...", "E-5 .. ...", "=== .. ..."]),
+        "drums": (rows: ["N-C kick v15", "N-1 hat v08", "N-4 kick v12", "N-1 hat v08", "N-C kick v15", "N-1 hat v08", "N-0 hat v10 R01", "... .. ..."]),
+    },
+)

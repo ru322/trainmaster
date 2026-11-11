@@ -1,0 +1,27 @@
+// リセットした。三角波で C5 → G4 → E4 → C4 と下がる。
+SoundDef(
+    format: 1,
+    timing: RowMs(125),
+    master: 190,
+    imports: [],
+    instruments: {
+        "down": (wave: Triangle, env: (attack_ms: 0, decay_ms: 100, sustain: 50, release_ms: 60), volume: 100),
+    },
+    channels: [
+        (name: "p1", volume: 15, tonal: true),
+    ],
+    patterns: {
+        "c0": (rows: [
+            "C-5 down v15",
+            "G-4 down v15",
+            "E-4 down v15",
+            "C-4 down v15",
+        ]),
+    },
+    order: [
+        (patterns: ["c0"], transpose: 0),
+    ],
+    loop_to: None,
+    tail_ms: 60,
+    allow_clip: false,
+)

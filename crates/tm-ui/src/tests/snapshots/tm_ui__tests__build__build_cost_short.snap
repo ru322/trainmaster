@@ -1,0 +1,31 @@
+---
+source: crates/tm-ui/src/tests/build.rs
+expression: info_lines(&short_screen())
+---
+Fill 0,320 640x16 #26345AFF
+Sprite '線'12 4,320 12x13 #FFFFFFFF
+Sprite '路'12 16,320 12x13 #FFFFFFFF
+Sprite 'の'12 28,321 12x11 #FFFFFFFF
+Sprite 'お'12 40,321 12x11 #FFFFFFFF
+Sprite '金'12 52,320 12x12 #FFFFFFFF
+Sprite '1'12 70,321 4x11 #FFFFFFFF
+Sprite '4'12 76,321 6x11 #FFFFFFFF
+Sprite '0'12 82,321 6x11 #FFFFFFFF
+Sprite '万'12 88,321 12x11 #FFFFFFFF
+Sprite '円'12 101,321 10x12 #FFFFFFFF
+Sprite ico_coin_x 124,322 12x12 #FFFFFFFF
+Sprite 'お'12 140,321 12x11 #FFB4A8FF
+Sprite '金'12 152,320 12x12 #FFB4A8FF
+Sprite 'が'12 164,320 12x12 #FFB4A8FF
+Sprite '足'12 176,321 12x12 #FFB4A8FF
+Sprite 'り'12 190,321 8x11 #FFB4A8FF
+Sprite 'な'12 200,321 12x11 #FFB4A8FF
+Sprite 'い'12 213,322 10x10 #FFB4A8FF
+Sprite 'よ'12 225,321 10x11 #FFB4A8FF
+Sprite '。'12 236,328 5x4 #FFB4A8FF
+Sprite 'あ'12 249,321 10x11 #FFB4A8FF
+Sprite 'と'12 261,321 10x11 #FFB4A8FF
+Sprite '4'12 278,321 6x11 #FFB4A8FF
+Sprite '0'12 284,321 6x11 #FFB4A8FF
+Sprite '万'12 290,321 12x11 #FFB4A8FF
+Sprite '円'12 303,321 10x12 #FFB4A8FF

@@ -1,0 +1,12 @@
+---
+source: crates/tm-ui/src/tests/build.rs
+expression: info_lines(&cost_screen())
+---
+Fill 0,320 640x16 #26345AFF
+Sprite '線'12 4,320 12x13 #FFFFFFFF
+Sprite '路'12 16,320 12x13 #FFFFFFFF
+Sprite 'の'12 28,321 12x11 #FFFFFFFF
+Sprite 'お'12 40,321 12x11 #FFFFFFFF
+Sprite '金'12 52,320 12x12 #FFFFFFFF
+Sprite '3'12 70,321 6x11 #FFFFFFFF
+Sprite '円'12 77,321 10x12 #FFFFFFFF

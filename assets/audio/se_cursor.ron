@@ -1,0 +1,24 @@
+// カーソル「コッ」。C7 を 1 音、すぐ消す。
+SoundDef(
+    format: 1,
+    timing: RowMs(30),
+    master: 120,
+    imports: [],
+    instruments: {
+        "tick": (wave: Pulse(duty: D12), env: (attack_ms: 0, decay_ms: 25, sustain: 0, release_ms: 0), volume: 100),
+    },
+    channels: [
+        (name: "p1", volume: 15, tonal: true),
+    ],
+    patterns: {
+        "c0": (rows: [
+            "C-7 tick v15",
+        ]),
+    },
+    order: [
+        (patterns: ["c0"], transpose: 0),
+    ],
+    loop_to: None,
+    tail_ms: 0,
+    allow_clip: false,
+)

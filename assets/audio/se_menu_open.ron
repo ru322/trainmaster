@@ -1,0 +1,27 @@
+// メニューを開いた。三角波で G4 → C5 → E5(se_buy と区別する)。
+SoundDef(
+    format: 1,
+    timing: RowMs(40),
+    master: 190,
+    imports: [],
+    instruments: {
+        "menu": (wave: Triangle, env: (attack_ms: 0, decay_ms: 40, sustain: 60, release_ms: 40), volume: 100),
+    },
+    channels: [
+        (name: "p1", volume: 15, tonal: true),
+    ],
+    patterns: {
+        "c0": (rows: [
+            "G-4 menu v15",
+            "C-5 menu v15",
+            "E-5 menu v15",
+            "=== .. ...",
+        ]),
+    },
+    order: [
+        (patterns: ["c0"], transpose: 0),
+    ],
+    loop_to: None,
+    tail_ms: 0,
+    allow_clip: false,
+)

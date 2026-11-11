@@ -1,0 +1,25 @@
+---
+source: crates/tm-ui/src/tests/snapshots.rs
+expression: info
+---
+Fill 0,320 640x16 #26345AFF
+Sprite '路'12 4,320 12x13 #FFFFFFFF
+Sprite '線'12 16,320 12x13 #FFFFFFFF
+Sprite '1'12 34,321 4x11 #FFFFFFFF
+Sprite ico_line_no_1 42,324 8x9 #E69F00FF
+Sprite '電'12 64,321 12x12 #FFFFFFFF
+Sprite '車'12 76,320 12x13 #FFFFFFFF
+Sprite '1'12 94,321 4x11 #FFFFFFFF
+Sprite '本'12 100,320 12x13 #FFFFFFFF
+Sprite '車'12 124,320 12x13 #FFFFFFFF
+Sprite '両'12 136,321 12x12 #FFFFFFFF
+Sprite 'の'12 148,321 12x11 #FFFFFFFF
+Sprite '数'12 160,320 12x13 #FFFFFFFF
+Sprite '1'12 178,321 4x11 #FFFFFFFF
+Sprite '両'12 184,321 12x12 #FFFFFFFF
+Sprite '通'12 208,321 12x12 #FFFFFFFF
+Sprite '過'12 220,321 12x12 #FFFFFFFF
+Sprite 'す'12 232,321 12x11 #FFFFFFFF
+Sprite 'る'12 245,321 10x11 #FFFFFFFF
+Sprite '駅'12 256,321 12x12 #FFFFFFFF
+Sprite '0'12 274,321 6x11 #FFFFFFFF

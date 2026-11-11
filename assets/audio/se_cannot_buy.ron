@@ -1,0 +1,26 @@
+// お金が足りない「ブッ」。G3 → D3 と下がる。
+SoundDef(
+    format: 1,
+    timing: RowMs(75),
+    master: 150,
+    imports: [],
+    instruments: {
+        "buzz": (wave: Pulse(duty: D50), env: (attack_ms: 0, decay_ms: 0, sustain: 80, release_ms: 20), volume: 100),
+    },
+    channels: [
+        (name: "p1", volume: 15, tonal: true),
+    ],
+    patterns: {
+        "c0": (rows: [
+            "G-3 buzz v15",
+            "D-3 buzz v15 D04",
+            "=== .. ...",
+        ]),
+    },
+    order: [
+        (patterns: ["c0"], transpose: 0),
+    ],
+    loop_to: None,
+    tail_ms: 0,
+    allow_clip: false,
+)

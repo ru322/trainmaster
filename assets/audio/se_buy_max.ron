@@ -1,0 +1,30 @@
+// まとめて強化できた。C5 から E6 まで 5 音で上がる。
+SoundDef(
+    format: 1,
+    timing: RowMs(40),
+    master: 140,
+    imports: [],
+    instruments: {
+        "buy": (wave: Pulse(duty: D50), env: (attack_ms: 0, decay_ms: 50, sustain: 30, release_ms: 30), volume: 100),
+        "buy_end": (wave: Pulse(duty: D50), env: (attack_ms: 0, decay_ms: 80, sustain: 40, release_ms: 60), volume: 100),
+    },
+    channels: [
+        (name: "p1", volume: 15, tonal: true),
+    ],
+    patterns: {
+        "c0": (rows: [
+            "C-5 buy v15",
+            "E-5 buy v15",
+            "G-5 buy v15",
+            "C-6 buy v15",
+            "E-6 buy_end v15",
+            "=== .. ...",
+        ]),
+    },
+    order: [
+        (patterns: ["c0"], transpose: 0),
+    ],
+    loop_to: None,
+    tail_ms: 20,
+    allow_clip: false,
+)

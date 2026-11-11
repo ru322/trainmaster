@@ -1,0 +1,329 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*.*.*"]
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+  workflow_dispatch:
+  schedule:
+    - cron: "0 18 * * 0"
+    - cron: "0 17 * * *"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event.action == 'labeled' && format('labeled-{0}', github.event.label.name) || github.event_name == 'schedule' && format('schedule-{0}', github.event.schedule) || 'main' }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+permissions:
+  contents: read
+
+jobs:
+  lint-test:
+    if: github.event.action != 'labeled'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - run: sudo apt-get update && sudo apt-get install -y libsdl2-dev pkg-config
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            target
+          key: cargo-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock') }}
+      - run: mise run check:rust-version
+      - run: mise run check:rustc
+      - run: mise run fmt:check
+      - run: mise run lint
+      - run: mise run build:all
+      - run: mise run rustdoc
+      - run: mise run test:sdl
+      - name: test:nosdl (and the test counts in the job summary. BV19)
+        shell: bash
+        run: |
+          mise run test:nosdl 2>&1 | tee "$RUNNER_TEMP/nosdl.log"
+          sed -n 's/.*test result: [a-zA-Z]*\. \([0-9]*\) passed; \([0-9]*\) failed; \([0-9]*\) ignored.*/\1 \2 \3/p' "$RUNNER_TEMP/nosdl.log" |
+            awk -v job="$GITHUB_JOB" '{ p += $1; f += $2; i += $3; n++ } END { printf "%s test:nosdl: %d passed, %d failed, %d ignored (%d test binaries)\n", job, p, f, i, n }' |
+            tee -a "$GITHUB_STEP_SUMMARY"
+      - run: mise run test:features
+      - run: mise run assets:check
+      - run: mise run test:launch
+      - run: mise run repo:size
+      - run: mise run deny
+      - run: mise run check:aarch64
+      - name: crate licenses (cargo-about, as in the release)
+        run: |
+          mise exec -- cargo fetch --locked
+          mise exec -- scripts/rust-licenses.sh "$RUNNER_TEMP/THIRD-PARTY-LICENSES.txt"
+          diff -u br2-external/package/trainmaster/THIRD-PARTY-LICENSES.txt "$RUNNER_TEMP/THIRD-PARTY-LICENSES.txt" ||
+            { echo "::error::THIRD-PARTY-LICENSES.txt is out of date (run mise run br:rust-licenses and commit it)"; exit 1; }
+      - run: actionlint
+      - run: >-
+          shellcheck scripts/*.sh br2-external/board/rpi3-64/post-build.sh br2-external/board/rpi3-64/post-image.sh
+          br2-external/board/rpi3-64/rootfs-overlay/usr/libexec/tm-launch
+          br2-external/board/rpi3-64/rootfs-overlay/etc/init.d/S05data
+          br2-external/board/rpi3-64/rootfs-overlay/etc/init.d/S30audio
+
+  test-aarch64:
+    if: github.event.action != 'labeled'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    env:
+      CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS: "-C target-cpu=cortex-a53"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            target
+          key: cargo-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock') }}
+      - run: mise run check:rustc
+      - name: test:nosdl (and the test counts in the job summary. BV19)
+        shell: bash
+        run: |
+          mise run test:nosdl 2>&1 | tee "$RUNNER_TEMP/nosdl.log"
+          sed -n 's/.*test result: [a-zA-Z]*\. \([0-9]*\) passed; \([0-9]*\) failed; \([0-9]*\) ignored.*/\1 \2 \3/p' "$RUNNER_TEMP/nosdl.log" |
+            awk -v job="$GITHUB_JOB" '{ p += $1; f += $2; i += $3; n++ } END { printf "%s test:nosdl: %d passed, %d failed, %d ignored (%d test binaries)\n", job, p, f, i, n }' |
+            tee -a "$GITHUB_STEP_SUMMARY"
+      - run: mise exec -- cargo bench -p tm-core --no-run --locked
+
+  test-long:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'schedule' && github.event.schedule == '0 17 * * *')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    env:
+      PROPTEST_RNG_SEED: ${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+      - run: mise run check:rustc
+      - run: mise run test:nosdl
+      - run: mise run test:long
+
+  coverage:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'schedule' && github.event.schedule == '0 18 * * 0')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+      - run: mise run check:rustc
+      - run: mise run coverage | tee coverage.txt
+        shell: bash
+      - if: always()
+        run: cat coverage.txt >> "$GITHUB_STEP_SUMMARY"
+
+  build-x86_64:
+    needs: lint-test
+    if: github.event.action != 'labeled'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: sudo apt-get update && sudo apt-get install -y libsdl2-dev pkg-config
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+      - run: mise run build:release
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: trainmaster-x86_64-linux
+          path: target/release/trainmaster
+          retention-days: 7
+          overwrite: true
+
+  # 03 BV24 の代わりの案: イメージを作らない実行は image-rpi3 を実行ごとの別のグループに入れ、実行中のビルドを取り消さない
+  # イメージは GPL のソース(legal-info)と一緒にしか配らないので、artifact にするのはタグの実行(release 用)だけ
+  image-gate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      build: ${{ steps.gate.outputs.build }}
+    steps:
+      - id: gate
+        env:
+          BUILD: >-
+            ${{
+              (github.event_name == 'schedule' && github.event.schedule == '0 18 * * 0') ||
+              (github.event_name != 'pull_request' && github.event_name != 'schedule') ||
+              (github.event.action == 'labeled' && github.event.label.name == 'build-image') ||
+              (github.event_name == 'pull_request' && github.event.action != 'labeled' &&
+                contains(github.event.pull_request.labels.*.name, 'build-image'))
+            }}
+        run: echo "build=$BUILD" | tee -a "$GITHUB_OUTPUT"
+
+  image-rpi3:
+    needs: [image-gate, lint-test, test-aarch64]
+    if: ${{ !cancelled() && !failure() && needs.image-gate.outputs.build == 'true' }}
+    concurrency:
+      group: >-
+        ${{
+          needs.image-gate.outputs.build == 'true' &&
+          contains(fromJSON('["success", "skipped"]'), needs.lint-test.result) &&
+          contains(fromJSON('["success", "skipped"]'), needs.test-aarch64.result) &&
+          format('image-{0}', github.ref) || format('image-skip-{0}', github.run_id)
+        }}
+      cancel-in-progress: true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 330
+    env:
+      WITH_LEGAL_INFO: ${{ startsWith(github.ref, 'refs/tags/v') && '1' || '0' }}
+      SAVE_CACHE: ${{ github.event_name != 'pull_request' && !startsWith(github.ref, 'refs/tags/') }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Free disk space
+        run: |
+          df -h / /mnt || true
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/share/powershell
+          if [ -d /mnt ] && [ "$(df --output=avail /mnt | tail -1)" -gt "$(df --output=avail . | tail -1)" ]; then
+            sudo mkdir -p /mnt/br-output
+            sudo chown "$(id -u):$(id -g)" /mnt/br-output
+            mkdir -p build
+            ln -s /mnt/br-output build/rpi3-64
+          fi
+          df -h / /mnt || true
+      - name: Install Buildroot host packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential bc bzip2 cpio diffutils file \
+            findutils gawk gzip patch perl python3 rsync tar unzip wget curl git xz-utils
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+      - name: Restore dl cache
+        id: dl-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/dl
+          key: br-dl-${{ hashFiles('scripts/buildroot.sha256', 'scripts/toolchain-sources.sha256', 'br2-external/configs/*', 'br2-external/**/*.mk', 'br2-external/**/*.hash', 'Cargo.lock') }}
+          restore-keys: br-dl-
+      - name: Restore ccache
+        id: ccache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.buildroot-ccache
+          key: br-ccache-${{ hashFiles('scripts/buildroot.sha256') }}-${{ github.run_id }}
+          restore-keys: br-ccache-${{ hashFiles('scripts/buildroot.sha256') }}-
+      - name: Fetch toolchain sources into the dl cache
+        if: env.SAVE_CACHE == 'true' && steps.dl-cache.outputs.cache-hit != 'true'
+        run: scripts/fetch-toolchain-sources.sh
+      - run: mise run br:cargo-fetch
+      - id: br-build
+        run: mise run br:build
+      - run: mise run check:br-rustc
+      - run: mise run br:dist
+      - name: Report (BV10, BV20)
+        if: always()
+        env:
+          DL_CACHE: ${{ steps.dl-cache.outputs.cache-matched-key }}
+          CCACHE: ${{ steps.ccache.outputs.cache-matched-key }}
+        run: |
+          { echo "dl cache restored from: ${DL_CACHE:-(none)}"; echo; echo "ccache restored from: ${CCACHE:-(none)}"; echo; } | tee -a "$GITHUB_STEP_SUMMARY"
+          scripts/br-report.sh
+      - name: Save dl cache
+        if: always() && env.SAVE_CACHE == 'true' && steps.dl-cache.outputs.cache-hit != 'true' && steps.br-build.outcome == 'success'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/dl
+          key: br-dl-${{ hashFiles('scripts/buildroot.sha256', 'scripts/toolchain-sources.sha256', 'br2-external/configs/*', 'br2-external/**/*.mk', 'br2-external/**/*.hash', 'Cargo.lock') }}
+      - name: Save ccache
+        if: ${{ !cancelled() && env.SAVE_CACHE == 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.buildroot-ccache
+          key: br-ccache-${{ hashFiles('scripts/buildroot.sha256') }}-${{ github.run_id }}
+      - name: Upload release assets
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-assets
+          path: build/dist/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+          overwrite: true
+
+  release:
+    needs: [lint-test, test-aarch64, build-x86_64, image-rpi3]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-assets
+          path: dist
+      - name: Check assets
+        working-directory: dist
+        run: |
+          [[ $GITHUB_REF_NAME =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] || { echo "bad tag $GITHUB_REF_NAME"; exit 1; }
+          grep -qx "tag: $GITHUB_REF_NAME" BUILDINFO.txt ||
+            { echo "BUILDINFO.txt is not for $GITHUB_REF_NAME (another tag on the same commit? make both tags annotated)"; exit 1; }
+          for p in rpi3-arm64.img.xz rpi3-arm64-exhibit.img.xz 'legal-info.tar.gz*' 'src.tar.gz*'; do
+            compgen -G "trainmaster-$GITHUB_REF_NAME-$p" >/dev/null || { echo "missing trainmaster-$GITHUB_REF_NAME-$p"; exit 1; }
+          done
+          for img in rpi3-arm64 rpi3-arm64-exhibit; do
+            grep -q "  trainmaster-$GITHUB_REF_NAME-$img.img.xz\$" SHA256SUMS || { echo "$img.img.xz is not in SHA256SUMS"; exit 1; }
+            grep -q "^sha256 of trainmaster-$GITHUB_REF_NAME-$img.img " BUILDINFO.txt || { echo "$img.img is not in BUILDINFO.txt"; exit 1; }
+          done
+          sha256sum -c SHA256SUMS
+          ls -l
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          tag=$GITHUB_REF_NAME
+          cat >notes.md <<EOF
+          ## どちらを書くか
+          - 家で遊ぶとき: \`trainmaster-$tag-rpi3-arm64.img.xz\`(家用)。遊んでいる会社と設定を SD カードに保存するので、次に電源を入れると「続きから」遊べる
+          - 展示会のとき: \`trainmaster-$tag-rpi3-arm64-exhibit.img.xz\`(展示用)。保存しない。交代のたびに「せってい」の「リセット」で初めから遊ぶ
+          - ちがいは保存するかどうかだけで、ゲームは同じ
+
+          ## 書き込み方
+          Raspberry Pi Imager で、デバイスは Raspberry Pi 3、OS は「カスタムイメージを使う」で上のどちらかの .img.xz を選ぶ(展開しなくてよい)。「OS のカスタマイズ」は使わない(「いいえ」を選ぶ)
+
+          **SD カードに書くと、カードの中身はすべて消える。保存していた会社と設定も消える。** 新しい版に上げるときも、家用と展示用を入れかえるときも同じ
+
+          ## 遊び終わるとき
+          「せってい」の「ゲームを終わる」を選び、画面が消えてから電源を抜く。とちゅうで抜いても、最後に保存したところ(ゲームの時間で最大 1 分前)から続けられる
+
+          ## ファイル
+          - \`trainmaster-$tag-rpi3-arm64.img.xz\`: 家用の SD カードのイメージ
+          - \`trainmaster-$tag-rpi3-arm64-exhibit.img.xz\`: 展示用の SD カードのイメージ(保存しない)
+          - \`*-legal-info.tar.gz\`: イメージに入っているソフトウェアのライセンス文とソース(\`extra/README.txt\` も参照)
+          - \`*-src.tar.gz\`: このゲームのソース
+          - \`BUILDINFO.txt\`: コミット、Buildroot と rustc の版、展開した後の 2 つの .img の SHA-256
+
+          確かめ方: 取得したファイルと同じ場所で \`sha256sum -c --ignore-missing SHA256SUMS\`。展開した後の .img は \`xz -dc ファイル名.img.xz | sha256sum\` の値を BUILDINFO.txt と比べる
+
+          EOF
+          if compgen -G "dist/*.part[0-9][0-9]" >/dev/null; then
+            echo "2 GiB を超えるファイルは \`.partNN\` に分けてある。全部を取得して \`cat trainmaster-$tag-legal-info.tar.gz.part* > trainmaster-$tag-legal-info.tar.gz\` のようにつなぐ" >>notes.md
+          fi
+          pre=()
+          if [[ $tag == *-* ]]; then pre=(--prerelease); fi
+          if draft=$(gh release view "$tag" --json isDraft --jq .isDraft 2>/dev/null); then
+            if [[ $draft != true ]]; then
+              echo "release $tag is already published; its assets are not replaced"
+              exit 1
+            fi
+            gh release upload "$tag" dist/* --clobber
+          else
+            gh release create "$tag" dist/* --draft --verify-tag "${pre[@]}" \
+              --title "Train Master $tag" --notes-file notes.md --generate-notes
+          fi
+          gh release edit "$tag" --draft=false

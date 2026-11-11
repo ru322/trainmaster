@@ -1,0 +1,25 @@
+// 説明・お知らせ「ポン」。サイン波の G5 を始めの 30ms で 50 セント下げる。
+SoundDef(
+    format: 1,
+    timing: RowMs(50),
+    master: 200,
+    imports: [],
+    instruments: {
+        "pop": (wave: Sine, env: (attack_ms: 0, decay_ms: 90, sustain: 0, release_ms: 0), volume: 100, slide: Some((cents_per_sec: -1666, ms: 30))),
+    },
+    channels: [
+        (name: "p1", volume: 15, tonal: true),
+    ],
+    patterns: {
+        "c0": (rows: [
+            "G-5 pop v15",
+            "... .. ...",
+        ]),
+    },
+    order: [
+        (patterns: ["c0"], transpose: 0),
+    ],
+    loop_to: None,
+    tail_ms: 0,
+    allow_clip: false,
+)

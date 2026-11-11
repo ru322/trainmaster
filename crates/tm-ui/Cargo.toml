@@ -1,0 +1,21 @@
+[package]
+name = "tm-ui"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[features]
+test-support = ["tm-core/test-support"]
+
+[dependencies]
+tm-core = { path = "../tm-core" }
+tm-numeric = { path = "../tm-numeric" }
+tm-input = { path = "../tm-input" }
+tm-tutorial = { path = "../tm-tutorial" }
+tm-assets = { path = "../tm-assets" }
+tm-platform-api = { path = "../tm-platform-api" }
+
+[dev-dependencies]
+insta = "1"
+tm-core = { path = "../tm-core", features = ["test-support"] }

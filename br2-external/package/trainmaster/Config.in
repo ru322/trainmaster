@@ -1,0 +1,14 @@
+config BR2_PACKAGE_TRAINMASTER
+	bool "trainmaster"
+	depends on BR2_PACKAGE_HOST_RUSTC_TARGET_ARCH_SUPPORTS
+	select BR2_PACKAGE_HOST_RUSTC
+	select BR2_PACKAGE_SDL2
+	help
+	  Train Master game (package tm-app, binary "trainmaster").
+
+config BR2_PACKAGE_TRAINMASTER_AV_POC
+	bool "install av_poc (development only)"
+	depends on BR2_PACKAGE_TRAINMASTER
+	help
+	  Build and install the audio/video PoC example of
+	  tm-platform-sdl (detail design 14, section 7.3).

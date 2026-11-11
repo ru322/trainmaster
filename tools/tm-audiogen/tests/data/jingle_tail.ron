@@ -1,0 +1,16 @@
+SoundDef(
+    format: 1,
+    timing: Bpm(bpm: 150, rows_per_beat: 2),
+    master: 110,
+    imports: ["_lib/common.ron"],
+    instruments: {
+        "crash": (wave: Noise(mode: Long), env: (attack_ms: 0, decay_ms: 300, sustain: 0, release_ms: 0), volume: 60),
+    },
+    channels: [ (name: "p1", volume: 15, tonal: true), (name: "noise", volume: 12, tonal: false) ],
+    patterns: {
+        "fan": (rows: ["C-5 lead v15", "E-5 .. ...", "G-5 .. ...", "C-6 .. ... V24", "... .. ...", "=== .. ..."]),
+        "hit": (rows: ["... .. ...", "... .. ...", "... .. ...", "N-1 crash v15", "... .. ...", "... .. ..."]),
+    },
+    order: [ (patterns: ["fan", "hit"], transpose: 0) ],
+    tail_ms: 300,
+)

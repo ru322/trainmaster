@@ -1,0 +1,97 @@
+#!/bin/sh
+# inittab の tty1 の respawn から起動する(03 §5.3、§5.9)。標準入力の tty1 はそのまま trainmaster に渡す
+# 起動から QUICK 秒未満で終わった回が続くと、次の起動を 2、4、8、16 秒(上限 MAX_WAIT)待たせる
+# /run/trainmaster.hold か /etc/trainmaster.hold があるあいだは起動しない(開発用イメージで av_poc を動かすとき)
+# 終了コード 10 で TM_EXIT_ACTION=poweroff なら電源を切る(14 PL-D-32)
+# TM_LAUNCH_ROOT: 絶対パスの前に付ける(scripts/test-tm-launch.sh 用。既定は空)
+
+R=${TM_LAUNCH_ROOT:-}
+
+# tm-launch 自身のエラー(/etc/default/trainmaster の誤りなど)は tty1 ではなくシリアルに出す。>> はテストでファイルにするため
+exec 2>>"$R/dev/console"
+
+LOG=$R/tmp/trainmaster.log
+STATE=$R/run/tm-launch.state
+EXIT_FILE=$R/run/tm-launch.exit
+DEFAULTS=$R/etc/default/trainmaster
+QUICK=10
+MAX_WAIT=16
+
+uptime_s() {
+	cut -d . -f 1 "$R/proc/uptime"
+}
+
+wait_hold() {
+	while [ -e "$R/run/trainmaster.hold" ] || [ -e "$R/etc/trainmaster.hold" ]; do
+		sleep 1
+	done
+}
+
+wait_hold
+now=$(uptime_s)
+last=
+fails=0
+[ -r "$STATE" ] && read -r last fails <"$STATE"
+case $last in '' | *[!0-9]*) last= ;; esac
+case $fails in '' | *[!0-9]*) fails=0 ;; esac
+if [ -n "$last" ] && [ $((now - last)) -lt "$QUICK" ]; then
+	fails=$((fails + 1))
+else
+	fails=0
+fi
+wait=0
+[ "$fails" -gt 0 ] && wait=$((fails < 4 ? 1 << fails : MAX_WAIT))
+
+# rootfs は読み取り専用なので、mesa のシェーダーのキャッシュなどは tmpfs に書かせる
+export SDL_VIDEODRIVER=kmsdrm SDL_AUDIODRIVER=alsa XDG_CACHE_HOME=/tmp/.cache
+export TM_SAVE_DIR=/data/trainmaster TM_EXIT_ACTION=poweroff
+# 構文の誤りがあると . でスクリプトごと終わるので、先に確かめて読み飛ばす
+if [ -r "$DEFAULTS" ] && ! sh -n "$DEFAULTS"; then
+	echo "tm-launch: syntax error in /etc/default/trainmaster, ignored" >&2
+elif [ -r "$DEFAULTS" ]; then
+	set -a
+	# shellcheck source=/dev/null
+	. "$DEFAULTS"
+	set +a
+fi
+
+# アプリと同じく前後の空白と大文字小文字を区別しない(16 §1.12)
+exit_action=$(printf '%s' "${TM_EXIT_ACTION:-}" | tr '[:space:]' ' ' | tr '[:upper:]' '[:lower:]' | sed 's/^ *//; s/ *$//')
+
+# 展示用イメージ(03 BD39)
+case " $(tr '[:space:]' ' ' <"$R/proc/cmdline") " in *" trainmaster.save=off "*) TM_SAVE_DIR=off ;; esac
+case $TM_SAVE_DIR in
+/data/*)
+	if ! grep -q ' /data ' "$R/proc/mounts"; then
+		echo "tm-launch: /data is not mounted, saving is off" >&2
+		TM_SAVE_DIR=off
+	fi
+	;;
+esac
+
+[ -e "$LOG" ] && mv -f "$LOG" "$LOG.1"
+rm -f "$EXIT_FILE"
+{
+	if [ "$wait" -gt 0 ]; then
+		echo "tm-launch: $fails quick exit(s) in a row, waiting ${wait}s"
+		sleep "$wait"
+	fi
+	wait_hold
+	start=$(uptime_s)
+	echo "$start $fails" >"$STATE"
+	echo "tm-launch: starting trainmaster at ${start}s"
+	"$R/usr/bin/trainmaster"
+	st=$?
+	echo "$st" >"$EXIT_FILE"
+	echo "tm-launch: trainmaster exited with status $st after $(($(uptime_s) - start))s"
+} 2>&1 | tee "$LOG" >>"$R/dev/console"
+
+# tee のパイプの左側の終了コードはここでは分からないので、ファイルで受け取る
+if [ "$(cat "$EXIT_FILE" 2>/dev/null)" = 10 ] && [ "$exit_action" = poweroff ]; then
+	echo "tm-launch: power off requested" >&2
+	sync
+	# BusyBox の init が ::shutdown(rcK、umount -a -r)を先に行ってから SIGTERM・SIGKILL を送り、電源を切る
+	poweroff
+	# 終了処理の間に tm-launch が終わると init が respawn しうるので待つ
+	sleep 60
+fi

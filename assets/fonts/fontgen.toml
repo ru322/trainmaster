@@ -1,0 +1,31 @@
+# tm-fontgen の設定(15 §4.2.2)。パスはリポジトリのルートからの相対パス
+font        = "assets/fonts/BIZUDGothic-Regular.ttf"
+font_sha256 = "7d2b48d84ef4e65c9f85bcf65fb1fb41c92b134be641fab6a7141d597c9a92b0"   # v1.051
+atlas       = "assets/atlas.toml"
+strip_owner = "font"
+padding     = 1
+
+[[face]]
+id = "Body12"
+size_px = 12
+line_height = 16
+contrast = 30
+
+[[face]]
+id = "Head16"
+size_px = 16
+line_height = 20
+contrast = 0
+
+[charset]
+ranges = [
+  ["U+0020", "U+007E"],
+  ["U+3041", "U+3093"],
+  ["U+30A1", "U+30F6"],
+]
+chars = "ー、。・「」『』〜…×○●◎★☆♪→←↑↓"
+
+[text]
+ja = "assets/text/ja.toml"
+allowed_kanji = "assets/text/allowed_kanji.txt"
+warn_line_chars = 20

@@ -1,0 +1,23 @@
+SoundDef(
+    format: 1,
+    timing: RowMs(50),
+    master: 100,
+    imports: [],
+    instruments: {
+        "sq": (wave: Pulse(duty: D25), env: (attack_ms: 0, decay_ms: 40, sustain: 80, release_ms: 20), volume: 80),
+        "tri": (wave: Triangle, env: (attack_ms: 0, decay_ms: 0, sustain: 100, release_ms: 10), volume: 100),
+    },
+    channels: [ (name: "p1", volume: 15, tonal: true), (name: "p2", volume: 10, tonal: true) ],
+    patterns: {
+        "a": (rows: ["C-5 sq v15 A47", "... .. ...", "E-5 .. ... U08", "... .. ... U00", "G-5 .. ... D10", "... .. ...",
+                     "C-5 .. ... G20", "E-5 .. ... G08 V36", "... .. ... V00", "C-6 .. ... W2_", "... .. ... W0_",
+                     "D-5 .. v12 S03", "F-5 .. ... K04", "A-5 .. ... R02", "=== .. ..."]),
+        "b": (rows: ["C-4 tri v15", "... .. ...", "^^^ .. ...", "G-3 tri v10 V24", "... .. ...", "=== .. ...",
+                     "E-4 tri v15 A37", "... .. ...", "... .. ... D02", "C-4 .. ... S01 K06", "... .. ...", "A-3 .. ...",
+                     "... .. ...", "C-4 .. ... G40", "=== .. ..."]),
+    },
+    order: [ (patterns: ["a", "b"], transpose: 0), (patterns: ["a", "-"], transpose: -5) ],
+    loop_to: None,
+    tail_ms: 100,
+    allow_clip: false,
+)

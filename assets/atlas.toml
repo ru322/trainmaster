@@ -1,0 +1,7 @@
+width = 1024
+
+[[page]]
+strips = [
+  { owner = "font", height = 768 },
+  { owner = "sprites", height = 256 },
+]

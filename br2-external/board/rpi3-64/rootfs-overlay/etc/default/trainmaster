@@ -1,0 +1,2 @@
+# tm-launch が読み込み、trainmaster に環境変数として渡す(16 §1.12 の TM_*)。会場ごとの値はこのファイルを変えたイメージで渡す
+# 例: TM_AUDIO=off、TM_AUDIO_BUFFER=2048、TM_FPS=30、TM_RENDER_BATCH=copy

@@ -1,0 +1,55 @@
+#!/bin/sh
+# 書き込み用の data パーティションを検査して /data にマウントする(03 §5.7 BD9)。fstab の mount -a は fsck をしないので使わない
+# stop では何もしない(inittab の ::shutdown の umount -a -r が外す)
+
+DEV=/dev/mmcblk0p3
+OPTS=noatime,nodev,nosuid,noexec
+
+uptime_s() {
+	cut -d ' ' -f 1 /proc/uptime
+}
+
+start() {
+	t0=$(uptime_s)
+	if [ ! -b "$DEV" ]; then
+		echo "data: $DEV not found"
+		return 0
+	fi
+	if grep -q ' /data ' /proc/mounts; then
+		echo "data: already mounted"
+		return 0
+	fi
+	note=
+	if dumpe2fs -h "$DEV" 2>/dev/null | grep -q '^Filesystem features:.* needs_recovery'; then
+		note=", journal replayed"
+	fi
+	e2fsck -p "$DEV"
+	rc=$?
+	if [ "$rc" -ge 2 ]; then
+		e2fsck -y "$DEV"
+		rc=$?
+	fi
+	if [ "$rc" -ge 4 ] || ! mount -t ext4 -o "$OPTS" "$DEV" /data; then
+		echo "data: recreating $DEV (saves are lost)"
+		if ! { mke2fs -q -t ext4 -b 4096 -L TMDATA -F "$DEV" && mount -t ext4 -o "$OPTS" "$DEV" /data; }; then
+			echo "data: not mounted, saving is off"
+			return 0
+		fi
+		note=", recreated"
+	fi
+	if ! mkdir -p /data/trainmaster; then
+		echo "data: cannot create /data/trainmaster, saving is off"
+		umount /data
+		return 0
+	fi
+	echo "data: mounted (e2fsck $rc$note, $(awk -v a="$t0" -v b="$(uptime_s)" 'BEGIN { printf "%.2f", b - a }')s)"
+}
+
+case $1 in
+start) start ;;
+stop) ;;
+*)
+	echo "Usage: $0 {start|stop}" >&2
+	exit 1
+	;;
+esac

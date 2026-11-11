@@ -1,0 +1,26 @@
+// キャンセル。E6 → A5 と下がる。
+SoundDef(
+    format: 1,
+    timing: RowMs(30),
+    master: 140,
+    imports: [],
+    instruments: {
+        "blip": (wave: Pulse(duty: D12), env: (attack_ms: 0, decay_ms: 30, sustain: 40, release_ms: 20), volume: 100),
+    },
+    channels: [
+        (name: "p1", volume: 15, tonal: true),
+    ],
+    patterns: {
+        "c0": (rows: [
+            "E-6 blip v15",
+            "A-5 blip v15",
+            "=== .. ...",
+        ]),
+    },
+    order: [
+        (patterns: ["c0"], transpose: 0),
+    ],
+    loop_to: None,
+    tail_ms: 0,
+    allow_clip: false,
+)

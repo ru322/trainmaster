@@ -1,0 +1,78 @@
+#!/bin/sh
+# ALSA の既定のデバイスを /run/asound.conf に書く(/etc/asound.conf はそこへのリンク。03 §5.6 BD8 の試作)
+# 使い方: /etc/init.d/S30audio start [auto|hdmi|jack|null]
+#   auto(既定): HDMI を試しに開けたら HDMI、だめなら 3.5mm、それもなければ音なし
+
+HDMI='hdmi:CARD=vc4hdmi,DEV=0'
+JACK='hw:CARD=Headphones,DEV=0'
+CONF=/run/asound.conf
+
+has_card() {
+	grep -q "\[$1 *\]" /proc/asound/cards 2>/dev/null
+}
+
+# 1 秒の無音を HDMI に流してみる。BusyBox に timeout がないので、3 秒で打ち切る
+try_hdmi() {
+	aplay -q -t raw -D "$HDMI" -f S16_LE -c 2 -r 48000 -d 1 /dev/zero 2>/dev/null &
+	pid=$!
+	n=0
+	while kill -0 "$pid" 2>/dev/null && [ "$n" -lt 30 ]; do
+		usleep 100000
+		n=$((n + 1))
+	done
+	if kill -0 "$pid" 2>/dev/null; then
+		kill -9 "$pid" 2>/dev/null
+		wait "$pid" 2>/dev/null
+		echo "S30audio: aplay on $HDMI timed out" >&2
+		return 1
+	fi
+	wait "$pid"
+}
+
+uptime_s() {
+	cut -d ' ' -f 1 /proc/uptime
+}
+
+start() {
+	mode=${1:-auto}
+	t0=$(uptime_s)
+	if [ "$mode" = auto ]; then
+		# vc4 の HDMI のカードは、ディスプレイの有無によらず登録される。登録が遅れたときだけ最大 3 秒待つ
+		n=0
+		while ! has_card vc4hdmi && [ "$n" -lt 30 ]; do
+			usleep 100000
+			n=$((n + 1))
+		done
+		if has_card vc4hdmi && try_hdmi; then
+			mode=hdmi
+		elif has_card Headphones; then
+			mode=jack
+		else
+			mode=null
+		fi
+	fi
+	case $mode in
+	hdmi) out="pcm.!default { type plug slave.pcm \"$HDMI\" }" ;;
+	jack)
+		# 0dB(増幅なし)。100% は +4dB で、音量を上げたときに割れるおそれがある
+		amixer -q -c Headphones sset PCM 0dB unmute || echo "S30audio: amixer failed" >&2
+		out="pcm.!default { type plug slave.pcm \"$JACK\" }"
+		;;
+	null) out='pcm.!default { type null }' ;;
+	*)
+		echo "Usage: $0 start [auto|hdmi|jack|null]" >&2
+		exit 1
+		;;
+	esac
+	echo "$out" >"$CONF.tmp" && mv "$CONF.tmp" "$CONF"
+	echo "Starting audio: $mode ($(awk -v a="$t0" -v b="$(uptime_s)" 'BEGIN { printf "%.2f", b - a }')s)"
+}
+
+case $1 in
+start | restart) start "$2" ;;
+stop) ;;
+*)
+	echo "Usage: $0 {start [auto|hdmi|jack|null]|stop|restart}" >&2
+	exit 1
+	;;
+esac

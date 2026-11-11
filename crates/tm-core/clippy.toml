@@ -1,0 +1,14 @@
+disallowed-methods = [
+    { path = "std::time::Instant::now", reason = "コア系は OS の時計を読まない(02 §1.3)" },
+    { path = "std::time::SystemTime::now", reason = "コア系は OS の時計を読まない(02 §1.3)" },
+    { path = "f64::powf", reason = "環境差で結果が変わりうる(02 §3.5)" },
+    { path = "f64::powi", reason = "環境差で結果が変わりうる(02 §3.5)" },
+    { path = "f64::exp", reason = "環境差で結果が変わりうる(02 §3.5)" },
+    { path = "f64::ln", reason = "環境差で結果が変わりうる(02 §3.5)" },
+    { path = "f64::mul_add", reason = "積和の融合で結果が変わりうる(02 §3.5、10 §2.6)" },
+    { path = "f64::sqrt", reason = "環境差で結果が変わりうる(02 §3.5)" },
+]
+disallowed-types = [
+    { path = "std::collections::HashMap", reason = "反復順が実行ごとに変わる(02 §3.4)" },
+    { path = "std::collections::HashSet", reason = "反復順が実行ごとに変わる(02 §3.4)" },
+]

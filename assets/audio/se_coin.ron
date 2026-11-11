@@ -1,0 +1,25 @@
+// お金が入る「チャリン」。E6 → B6、小さめ。
+SoundDef(
+    format: 1,
+    timing: RowMs(40),
+    master: 105,
+    imports: [],
+    instruments: {
+        "coin": (wave: Pulse(duty: D25), env: (attack_ms: 0, decay_ms: 70, sustain: 0, release_ms: 10), volume: 100),
+    },
+    channels: [
+        (name: "p1", volume: 15, tonal: true),
+    ],
+    patterns: {
+        "c0": (rows: [
+            "E-6 coin v15",
+            "B-6 coin v15",
+        ]),
+    },
+    order: [
+        (patterns: ["c0"], transpose: 0),
+    ],
+    loop_to: None,
+    tail_ms: 40,
+    allow_clip: false,
+)

@@ -1,0 +1,184 @@
+[env]
+BUILDROOT_VERSION = "2026.02.3"
+BR_SRC = "{{config_root}}/build/buildroot-{{env.BUILDROOT_VERSION}}"
+BR_OUTPUT = "{{config_root}}/build/rpi3-64"
+BR2_DL_DIR = "{{config_root}}/build/dl"
+BR2_EXTERNAL_DIR = "{{config_root}}/br2-external"
+DIST_DIR = "{{config_root}}/build/dist"
+# Buildroot の setlocalversion が外側のこのリポジトリの git describe を版に取り込まないようにする(os-release の VERSION など)
+GIT_CEILING_DIRECTORIES = "{{config_root}}/build"
+
+[settings]
+lockfile = true
+
+[tools]
+rust = { version = "1.88.0", profile = "minimal", components = ["rustfmt", "clippy"], targets = ["aarch64-unknown-linux-gnu"] }
+actionlint = "latest"
+shellcheck = "latest"
+"cargo:cargo-deny" = "latest"
+"github:taiki-e/cargo-llvm-cov" = "latest"
+"github:EmbarkStudios/cargo-about" = "latest"
+
+[tasks.fmt]
+run = "cargo fmt --all"
+
+[tasks."fmt:check"]
+run = "cargo fmt --all -- --check"
+
+[tasks.lint]
+description = "clippy。既定の feature と、tm-app の devtools の組み合わせ(16 APP-CR-04 (c))"
+run = [
+  "cargo clippy --workspace --all-targets --locked -- -D warnings",
+  "cargo clippy --locked -p tm-app --all-targets --features devtools -- -D warnings",
+  "cargo clippy --locked -p tm-core --all-targets --features test-support -- -D warnings",
+]
+
+[tasks.test]
+description = "開発機での全部のテスト(libsdl2-dev が必要)"
+depends = ["test:sdl", "test:nosdl", "test:features"]
+
+[tasks."test:sdl"]
+description = "SDL2 に依存するテスト(ミキサー、描画のスナップショット。14 PL-CR-10、PL-V-17)。SDL の dummy ドライバで動かす"
+env = { SDL_VIDEODRIVER = "dummy", SDL_AUDIODRIVER = "dummy" }
+run = [
+  "cargo test --locked -p tm-platform-sdl",
+  "cargo test --locked -p tm-app --test sdl_smoke --bin trainmaster",
+]
+
+[tasks."test:features"]
+description = "feature の組み合わせのテスト(16 APP-CR-04 (d))。devtools ありの tm-app(APP-T-19)と、feature なし・test-support ありの tm-core 単独"
+env = { SDL_VIDEODRIVER = "dummy", SDL_AUDIODRIVER = "dummy" }
+run = [
+  "cargo test --profile release-check --locked -p tm-app --features devtools",
+  "cargo test --profile release-check --locked -p tm-core",
+  "cargo test --profile release-check --locked -p tm-core --features test-support",
+]
+
+[tasks."test:nosdl"]
+description = "SDL2 に依存しないクレート群のテスト(02 §10.3)。release-check プロファイル。x86_64 と arm64 の両方で実行する"
+run = "cargo test --profile release-check --workspace --exclude tm-platform-sdl --no-default-features --features tm-platform-api/headless --locked"
+
+[tasks."test:long"]
+description = "#[ignore] の重いテスト(長時間テスト、詰み検査 50 シード、tm-app の soak)。定期実行のジョブで回す"
+run = "cargo test --profile release-check --workspace --exclude tm-platform-sdl --no-default-features --features tm-platform-api/headless --locked -- --ignored"
+
+[tasks."test:launch"]
+description = "tm-launch の模擬テスト(終了コード 10 の sync・poweroff、TM_SAVE_DIR と TM_EXIT_ACTION。16 APP-T-32、03 §5.3)"
+run = "scripts/test-tm-launch.sh"
+
+[tasks.run]
+description = "開発機のウィンドウでゲームを起動(キーボード操作)。開発用の機能 devtools を有効にする(16 APP-D-04)"
+run = "cargo run --locked -p tm-app --bin trainmaster --features devtools"
+
+[tasks."build:release"]
+description = "成果物は target/release/trainmaster"
+run = "cargo build --release --locked -p tm-app --bin trainmaster"
+
+[tasks.rustdoc]
+description = "Rust のソースのドキュメント(rustdoc)を target/doc/ に作る。警告はエラー。開くには mise run rustdoc -- --open"
+env = { RUSTDOCFLAGS = "-D warnings" }
+run = "cargo doc --workspace --no-deps --locked"
+
+[tasks."build:all"]
+description = "ワークスペースの全部(テスト、ベンチマーク、例、tools/)をビルドする。rustc 1.88.0 で通ることが 02 V17 の確認になる"
+run = "cargo build --workspace --all-targets --locked"
+
+[tasks."check:aarch64"]
+description = "aarch64 向けにコンパイルが通るかだけ見る(リンクしないので aarch64 の SDL2 は不要)"
+run = "cargo check --workspace --locked --target aarch64-unknown-linux-gnu"
+
+[tasks."assets:gen"]
+description = "フォント・画像・音から生成アセットを作り直す(生成物はコミットする。02 §2.5 D23、D31、BD20)"
+run = "scripts/assets-gen.sh"
+
+[tasks."assets:check"]
+description = "コミットされた生成アセットが最新かを検査(変更・追加・削除のどれかがあれば失敗。git の追跡の有無によらず、再生成の前の中身と比べる)"
+run = "scripts/assets-gen.sh --check"
+
+[tasks."repo:size"]
+description = "リポジトリと生成アセットの大きさをログ(と GitHub のジョブの要約)に出す(02 V15。失敗はさせない)"
+run = "scripts/repo-size.sh"
+
+[tasks.coverage]
+description = "test:nosdl の範囲の行カバレッジを測る(16 APP-D-15。合否には使わず、ジョブの要約に出すだけ)"
+run = [
+  "rustup component add llvm-tools",
+  "cargo llvm-cov --profile release-check --workspace --exclude tm-platform-sdl --no-default-features --features tm-platform-api/headless --locked --summary-only",
+]
+
+[tasks.deny]
+run = "cargo deny check licenses"
+
+[tasks."check:rust-version"]
+description = "C-1: mise.toml・rust-version・Buildroot の RUST_BIN_VERSION の一致、resolver = 3、全メンバーの rust-version 継承"
+depends = ["br:fetch"]
+run = "scripts/check-rust-version.sh decl --require-buildroot"
+
+[tasks."check:rustc"]
+description = "C-2: 実際に使われる rustc が mise.toml の版か"
+run = "scripts/check-rust-version.sh active"
+
+[tasks."check:br-rustc"]
+description = "C-3: Buildroot が出荷バイナリのビルドに使った rustc と mise の rustc の release / commit-hash の一致(br:build の後)"
+run = "scripts/check-rust-version.sh buildroot"
+
+[tasks."br:fetch"]
+description = "Buildroot の固定版を取得し、scripts/buildroot.sha256 で検証して BR_SRC に展開(03 §7.3、BD27)"
+run = "scripts/br-fetch.sh"
+
+[tasks."br:cargo-fetch"]
+description = "Buildroot が使う CARGO_HOME に依存クレートを事前取得する(local パッケージではベンダリングされないため。03 §4.3)"
+run = "mkdir -p $BR2_DL_DIR && CARGO_HOME=$BR2_DL_DIR/br-cargo-home cargo fetch --locked"
+
+[tasks."br:config"]
+description = "配布用の .config を BR_OUTPUT に作る"
+depends = ["br:fetch"]
+run = "make -C $BR_SRC O=$BR_OUTPUT BR2_EXTERNAL=$BR2_EXTERNAL_DIR trainmaster_rpi3_64_defconfig"
+
+[tasks."br:config-dev"]
+description = "開発用の .config を BR_OUTPUT-dev に作る(シリアルの getty、DHCP、SSH、rootfs 読み書き可。BD28)"
+depends = ["br:fetch"]
+run = "make -C $BR_SRC O=$BR_OUTPUT-dev BR2_EXTERNAL=$BR2_EXTERNAL_DIR trainmaster_rpi3_64_dev_defconfig"
+
+[tasks."br:menuconfig"]
+description = "配布用の .config を対話的に変える(libncurses-dev が必要)"
+run = "make -C $BR_OUTPUT menuconfig"
+
+[tasks."br:menuconfig-dev"]
+description = "開発用の .config を対話的に変える(libncurses-dev が必要)"
+run = "make -C $BR_OUTPUT-dev menuconfig"
+
+[tasks."br:savedefconfig"]
+description = "配布用の .config を br2-external/configs の defconfig に書き戻す"
+run = "make -C $BR_OUTPUT savedefconfig"
+
+[tasks."br:savedefconfig-dev"]
+description = "開発用の .config を br2-external/configs の dev defconfig に書き戻す(配布用と共通の行は両方の defconfig を直す)"
+run = "make -C $BR_OUTPUT-dev savedefconfig"
+
+[tasks."br:build"]
+description = "配布用の sdcard.img を BR_OUTPUT/images に作る"
+depends = ["br:config", "br:cargo-fetch"]
+run = "make -C $BR_OUTPUT"
+
+[tasks."br:build-dev"]
+description = "開発用の sdcard.img を BR_OUTPUT-dev/images に作る"
+depends = ["br:config-dev", "br:cargo-fetch"]
+run = "make -C $BR_OUTPUT-dev"
+
+[tasks."br:rebuild-app"]
+description = "配布用のアプリだけ作り直してイメージを再生成(overlay の変更もここで入る)"
+depends = ["br:cargo-fetch"]
+run = "make -C $BR_OUTPUT trainmaster-rebuild all"
+
+[tasks."br:rust-licenses"]
+description = "イメージに入れる依存クレートのライセンス文を作り直す(br2-external/package/trainmaster/THIRD-PARTY-LICENSES.txt。生成物はコミットする。Cargo.lock を変えたら実行する。03 §6.4)"
+run = "scripts/rust-licenses.sh br2-external/package/trainmaster/THIRD-PARTY-LICENSES.txt"
+
+[tasks."br:dist"]
+description = "legal-info を作り、.img.xz・legal-info の tar.gz・アプリのソースの tar.gz(git archive)・BUILDINFO.txt・SHA256SUMS を DIST_DIR に置く(03 §6.2。WITH_LEGAL_INFO=0 なら .img.xz・BUILDINFO・SHA256SUMS だけ)"
+run = ["[ \"${WITH_LEGAL_INFO:-1}\" = 0 ] || make -C $BR_OUTPUT legal-info", "scripts/make-dist.sh"]
+
+[tasks."qemu:rpi3"]
+description = "イメージを QEMU の raspi3b で起動する(03 §8.3。引数は scripts/qemu-raspi3b.sh の先頭を参照)"
+run = "scripts/qemu-raspi3b.sh"

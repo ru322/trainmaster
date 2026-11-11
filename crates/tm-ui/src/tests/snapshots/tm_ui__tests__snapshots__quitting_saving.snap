@@ -1,0 +1,22 @@
+---
+source: crates/tm-ui/src/tests/snapshots.rs
+expression: after_dim(&h.draw_text())
+---
+Fill 0,0 640x360 #00000080
+Sprite ui_win_tl 232,164 4x4 #FFFFFFFF
+Sprite ui_win_t 236,164 168x4 #FFFFFFFF
+Sprite ui_win_tr 404,164 4x4 #FFFFFFFF
+Sprite ui_win_l 232,168 4x24 #FFFFFFFF
+Sprite ui_win_c 236,168 168x24 #FFFFFFFF
+Sprite ui_win_r 404,168 4x24 #FFFFFFFF
+Sprite ui_win_bl 232,192 4x4 #FFFFFFFF
+Sprite ui_win_b 236,192 168x4 #FFFFFFFF
+Sprite ui_win_br 404,192 4x4 #FFFFFFFF
+Sprite ico_save 270,174 12x12 #FFFFFFFF
+Sprite '保'12 286,172 12x13 #FFFFFFFF
+Sprite '存'12 298,172 12x13 #FFFFFFFF
+Sprite 'し'12 312,173 9x11 #FFFFFFFF
+Sprite 'て'12 322,174 11x10 #FFFFFFFF
+Sprite 'い'12 335,174 10x10 #FFFFFFFF
+Sprite 'る'12 347,173 10x11 #FFFFFFFF
+Sprite 'よ'12 359,173 10x11 #FFFFFFFF

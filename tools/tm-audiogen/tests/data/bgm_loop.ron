@@ -1,0 +1,25 @@
+SoundDef(
+    format: 1,
+    timing: Bpm(bpm: 132, rows_per_beat: 4),
+    master: 80,
+    imports: ["_lib/common.ron"],
+    instruments: {},
+    channels: [
+        (name: "p1", volume: 15, tonal: true),
+        (name: "p2", volume: 9, tonal: true),
+        (name: "tri", volume: 15, tonal: true),
+        (name: "noise", volume: 10, tonal: false),
+    ],
+    patterns: {
+        "intro": (rows: ["C-4 bass v15", "... .. ...", "=== .. ...", "... .. ...", "G-3 bass ...", "... .. ...", "=== .. ...", "... .. ..."]),
+        "harmony": (rows: ["E-5 harm v15", "... .. ...", "=== .. ...", "... .. ...", "D-5 .. ...", "... .. ...", "=== .. ...", "... .. ..."]),
+    },
+    order: [
+        (patterns: ["theme", "-", "intro", "-"], transpose: 0),
+        (patterns: ["theme", "harmony", "intro", "drums"], transpose: 0),
+        (patterns: ["theme", "harmony", "intro", "drums"], transpose: 2),
+    ],
+    loop_to: Some(1),
+    tail_ms: 0,
+    allow_clip: false,
+)

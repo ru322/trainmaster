@@ -1,0 +1,20 @@
+Sprites(
+    tile: 16,
+    sprites: [
+        (name: "ico_save",
+         source: Pixels([
+                "............",
+                ".KKKKKKKKKK.",
+                ".KbKWWWWWWK.",
+                ".KbKWmmmmWK.",
+                ".KbKWWWWWWK.",
+                ".KbKWmmmmWK.",
+                ".KbKWWWWWWK.",
+                ".KbKWmmmmWK.",
+                ".KbKWWWWWWK.",
+                ".KbKWmmWWWK.",
+                ".KKKKKKKKKK.",
+                "............",
+            ])),
+    ],
+)

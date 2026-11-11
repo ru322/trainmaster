@@ -1,0 +1,30 @@
+---
+source: crates/tm-ui/src/tests/explain.rs
+expression: "tail_from(&h.draw_text(), &fill_at(BAND_ROW2))"
+---
+Fill 0,336 640x24 #1E2A4AFF
+Sprite ico_guide 6,342 6x12 #FFD400FF
+Sprite '駅'12 18,341 12x12 #FFD400FF
+Sprite 'を'12 31,341 10x11 #FFD400FF
+Sprite '2'12 42,341 6x11 #FFD400FF
+Sprite 'つ'12 48,342 11x9 #FFD400FF
+Sprite '選'12 60,341 12x12 #FFD400FF
+Sprite 'ん'12 72,341 12x11 #FFD400FF
+Sprite 'で'12 84,342 12x10 #FFD400FF
+Sprite '路'12 96,340 12x13 #FFD400FF
+Sprite '線'12 108,340 12x13 #FFD400FF
+Sprite 'を'12 121,341 10x11 #FFD400FF
+Sprite '作'12 132,340 12x13 #FFD400FF
+Sprite 'ろ'12 145,341 10x11 #FFD400FF
+Sprite 'う'12 157,341 9x11 #FFD400FF
+Sprite btn_key_tab 526,340 16x16 #FFFFFFFF
+Sprite '曲'12 542,340 11x13 #FFFFFFFF
+Sprite 'が'12 554,340 12x12 #FFFFFFFF
+Sprite 'り'12 568,341 8x11 #FFFFFFFF
+Sprite '方'12 578,340 12x12 #FFFFFFFF
+Sprite btn_key_x 596,340 16x16 #FFFFFFFF
+Sprite '戻'12 612,341 12x12 #FFFFFFFF
+Sprite 'る'12 625,341 10x11 #FFFFFFFF
+Sprite fx_dot 52,48 16x16 #FFD40093
+Sprite fx_dot 308,48 16x16 #FFD40093
+Sprite fx_dot 308,240 16x16 #FFD40093

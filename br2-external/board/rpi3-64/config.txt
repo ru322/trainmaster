@@ -1,0 +1,19 @@
+start_file=start.elf
+fixup_file=fixup.dat
+
+kernel=Image
+arm_64bit=1
+
+disable_overscan=1
+disable_splash=1
+
+gpu_mem_256=100
+gpu_mem_512=100
+gpu_mem_1024=100
+
+# PL011 (ttyAMA0) を GPIO 14/15 のシリアルコンソールに回す
+dtoverlay=miniuart-bt
+
+# 3.5mm の音(bcm2835)。vc4-kms-v3d より前に書く(03 §5.4、§5.6)
+dtparam=audio=on
+dtoverlay=vc4-kms-v3d

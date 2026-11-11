@@ -1,0 +1,51 @@
+---
+source: crates/tm-ui/src/tests/snapshots.rs
+expression: after_deco(&h.draw_text())
+---
+Sprite ui_win_tl 168,236 4x4 #FFFFFFFF
+Sprite ui_win_t 172,236 296x4 #FFFFFFFF
+Sprite ui_win_tr 468,236 4x4 #FFFFFFFF
+Sprite ui_win_l 168,240 4x72 #FFFFFFFF
+Sprite ui_win_c 172,240 296x72 #FFFFFFFF
+Sprite ui_win_r 468,240 4x72 #FFFFFFFF
+Sprite ui_win_bl 168,312 4x4 #FFFFFFFF
+Sprite ui_win_b 172,312 296x4 #FFFFFFFF
+Sprite ui_win_br 468,312 4x4 #FFFFFFFF
+Sprite '初'12 184,244 12x13 #FFFFFFFF
+Sprite 'め'12 196,245 11x11 #FFFFFFFF
+Sprite 'か'12 208,245 12x11 #FFFFFFFF
+Sprite 'ら'12 222,245 9x11 #FFFFFFFF
+Sprite '遊'12 232,244 12x13 #FFFFFFFF
+Sprite 'ぶ'12 244,244 12x12 #FFFFFFFF
+Sprite '?'12 256,245 6x11 #FFFFFFFF
+Sprite '今'12 184,260 12x13 #FFFFFFFF
+Sprite 'の'12 196,261 12x11 #FFFFFFFF
+Sprite '会'12 208,260 12x13 #FFFFFFFF
+Sprite '社'12 220,260 12x13 #FFFFFFFF
+Sprite 'は'12 233,261 11x11 #FFFFFFFF
+Sprite 'な'12 244,261 12x11 #FFFFFFFF
+Sprite 'く'12 257,261 9x11 #FFFFFFFF
+Sprite 'な'12 268,261 12x11 #FFFFFFFF
+Sprite 'る'12 281,261 10x11 #FFFFFFFF
+Sprite 'よ'12 293,261 10x11 #FFFFFFFF
+Sprite ui_sel_tl 224,288 3x3 #FFFFFFFF
+Sprite ui_sel_t 227,288 66x3 #FFFFFFFF
+Sprite ui_sel_tr 293,288 3x3 #FFFFFFFF
+Sprite ui_sel_l 224,291 3x14 #FFFFFFFF
+Sprite ui_sel_c 227,291 66x14 #FFFFFFFF
+Sprite ui_sel_r 293,291 3x14 #FFFFFFFF
+Sprite ui_sel_bl 224,305 3x3 #FFFFFFFF
+Sprite ui_sel_b 227,305 66x3 #FFFFFFFF
+Sprite ui_sel_br 293,305 3x3 #FFFFFFFF
+Sprite ui_menu_cursor 228,294 8x9 #FFFFFFFF
+Sprite 'い'12 243,292 10x10 #FFFFFFFF
+Sprite 'い'12 255,292 10x10 #FFFFFFFF
+Sprite 'え'12 266,291 11x11 #FFFFFFFF
+Sprite 'は'12 369,291 11x11 #FFFFFFFF
+Sprite 'い'12 381,292 10x10 #FFFFFFFF
+Sprite btn_key_z 550,340 16x16 #FFFFFFFF
+Sprite '選'12 566,341 12x12 #FFFFFFFF
+Sprite 'ぶ'12 578,340 12x12 #FFFFFFFF
+Sprite btn_key_x 596,340 16x16 #FFFFFFFF
+Sprite '戻'12 612,341 12x12 #FFFFFFFF
+Sprite 'る'12 625,341 10x11 #FFFFFFFF

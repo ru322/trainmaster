@@ -1,0 +1,20 @@
+Palette(
+    colors: [
+        ('.', "clear", 0x00000000),
+        ('K', "outline", 0x000000FF),
+        ('W', "white", 0xFFFFFFFF),
+        ('g', "rail", 0x5A5A5AFF),
+        ('l', "light", 0xC8C8C8FF),
+        ('m', "mid", 0x6E6E6EFF),
+        ('p', "panel", 0x1E2A4AFF),
+        ('f', "frame", 0xA6AEC0FF),
+        ('y', "highlight", 0xFFD400FF),
+        ('c', "coin", 0xFFE066FF),
+        ('o', "coin_dark", 0xC9A227FF),
+        ('r', "red", 0xC0392BFF),
+        ('b', "blue", 0x3B6FD6FF),
+        ('e', "green", 0x1F7A3DFF),
+        ('s', "shadow", 0x00000060),
+        ('a', "accent", 0xE69F00FF),
+    ],
+)

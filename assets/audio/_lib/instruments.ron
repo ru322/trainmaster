@@ -1,0 +1,21 @@
+// 全曲で共有する音色(14 §6.1)。
+LibDef(
+    format: 1,
+    instruments: {
+        "lead": (wave: Pulse(duty: D50), env: (attack_ms: 2, decay_ms: 120, sustain: 70, release_ms: 80), volume: 60),
+        "lead_soft": (wave: Pulse(duty: D25), env: (attack_ms: 5, decay_ms: 200, sustain: 60, release_ms: 120), volume: 70, vibrato: Some((depth_cents: 15, rate_millihz: 5500, delay_ms: 250))),
+        "lead_long": (wave: Pulse(duty: D50), env: (attack_ms: 2, decay_ms: 300, sustain: 60, release_ms: 280), volume: 60, vibrato: Some((depth_cents: 20, rate_millihz: 6000, delay_ms: 150))),
+        "harm": (wave: Pulse(duty: D12), env: (attack_ms: 2, decay_ms: 80, sustain: 50, release_ms: 60), volume: 50),
+        "arp": (wave: Pulse(duty: D25), env: (attack_ms: 0, decay_ms: 60, sustain: 40, release_ms: 40), volume: 40, arp: Some((steps: [0, 4, 7], step_ms: 17, looped: true))),
+        "chord": (wave: Pulse(duty: D25), env: (attack_ms: 2, decay_ms: 400, sustain: 50, release_ms: 250), volume: 40, arp: Some((steps: [0, 4, 7, 12], step_ms: 17, looped: true))),
+        "pluck": (wave: Pulse(duty: D25), env: (attack_ms: 0, decay_ms: 70, sustain: 20, release_ms: 30), volume: 40),
+        "bass": (wave: Triangle, env: (attack_ms: 0, decay_ms: 0, sustain: 100, release_ms: 30), volume: 80),
+        "kick": (wave: Noise(mode: Long), env: (attack_ms: 0, decay_ms: 60, sustain: 0, release_ms: 0), volume: 60),
+        "snare": (wave: Noise(mode: Long), env: (attack_ms: 0, decay_ms: 120, sustain: 0, release_ms: 0), volume: 50),
+        "hat": (wave: Noise(mode: Short), env: (attack_ms: 0, decay_ms: 25, sustain: 0, release_ms: 0), volume: 30),
+        "rail": (wave: Noise(mode: Long), env: (attack_ms: 0, decay_ms: 15, sustain: 0, release_ms: 0), volume: 50),
+        "crash": (wave: Noise(mode: Long), env: (attack_ms: 0, decay_ms: 600, sustain: 0, release_ms: 0), volume: 55),
+    },
+    patterns: {
+    },
+)

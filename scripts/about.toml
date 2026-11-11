@@ -1,0 +1,23 @@
+# cargo-about の設定(scripts/rust-licenses.sh)。accepted は deny.toml の allow と同じにする
+accepted = ["MIT", "Apache-2.0", "Zlib", "Unicode-3.0"]
+targets = ["aarch64-unknown-linux-gnu"]
+ignore-build-dependencies = true
+ignore-dev-dependencies = true
+private = { ignore = true }
+
+# sdl2-sys は SDL のソース一式を同梱しており、全部のライセンス文を拾うと数百件になる。
+# 実行ファイルに入るのはバインディングだけ(SDL2 本体は Buildroot の libSDL2 に動的リンク)なので、SDL の LICENSE.txt に絞る。
+# MIT の文面はクレートに含まれないので、同じ rust-sdl2 のプロジェクトの sdl2 クレートの LICENSE を使う(取得済みのソースの隣のディレクトリ)。
+# sdl2 / sdl2-sys を上げたら、パスの版と checksum を直し、出力のライセンス文が 14 件前後に収まることを確かめる
+[sdl2-sys.clarify]
+license = "MIT AND Zlib"
+
+[[sdl2-sys.clarify.files]]
+path = "SDL/LICENSE.txt"
+license = "Zlib"
+checksum = "9928507f684c1965d07f2b6ef4b4723d5efc2f6b4ab731f743a413c51c319927"
+
+[[sdl2-sys.clarify.files]]
+path = "../sdl2-0.38.0/LICENSE"
+license = "MIT"
+checksum = "df7af208e28b219a02bfa6efb733ed70c96b35e13aa09064c3c999919790dd4c"

@@ -1,0 +1,41 @@
+// 新しい数の単位。三角波の C5 E5 G5 C6 に、1 行遅れのサイン波のきらきらを重ねる。
+SoundDef(
+    format: 1,
+    timing: RowMs(60),
+    master: 135,
+    imports: [],
+    instruments: {
+        "up": (wave: Triangle, env: (attack_ms: 0, decay_ms: 60, sustain: 60, release_ms: 30), volume: 100),
+        "kira": (wave: Sine, env: (attack_ms: 0, decay_ms: 120, sustain: 40, release_ms: 150), volume: 100, vibrato: Some((depth_cents: 10, rate_millihz: 8000, delay_ms: 0))),
+    },
+    channels: [
+        (name: "p1", volume: 15, tonal: true),
+        (name: "p2", volume: 15, tonal: true),
+    ],
+    patterns: {
+        "c0": (rows: [
+            "C-5 up v15",
+            "E-5 up v15",
+            "G-5 up v15",
+            "C-6 up v15",
+            "... .. ...",
+            "=== .. ...",
+            "... .. ...",
+        ]),
+        "c1": (rows: [
+            "... .. ...",
+            "E-6 kira v12",
+            "G-6 kira v12",
+            "C-7 kira v12",
+            "E-7 kira v12",
+            "... .. ...",
+            "=== .. ...",
+        ]),
+    },
+    order: [
+        (patterns: ["c0", "c1"], transpose: 0),
+    ],
+    loop_to: None,
+    tail_ms: 0,
+    allow_clip: false,
+)

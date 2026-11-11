@@ -1,0 +1,22 @@
+---
+source: crates/tm-ui/src/tests/snapshots.rs
+expression: row2
+---
+Sprite '1'12 4,17 4x11 #A5F2B0FF
+Sprite '秒'12 10,16 12x13 #A5F2B0FF
+Sprite 'で'12 22,18 12x10 #A5F2B0FF
+Sprite '0'12 40,17 6x11 #A5F2B0FF
+Sprite '円'12 47,17 10x12 #A5F2B0FF
+Sprite '1'12 488,17 4x11 #FFFFFFFF
+Sprite '無'12 494,16 12x13 #FFFFFFFF
+Sprite '量'12 506,17 12x11 #FFFFFFFF
+Sprite '大'12 518,16 12x13 #FFFFFFFF
+Sprite '数'12 530,16 12x13 #FFFFFFFF
+Sprite '円'12 543,17 10x12 #FFFFFFFF
+Sprite 'を'12 555,17 10x11 #FFFFFFFF
+Sprite '目'12 567,17 10x11 #FFFFFFFF
+Sprite '指'12 578,16 12x13 #FFFFFFFF
+Sprite 'そ'12 591,17 10x11 #FFFFFFFF
+Sprite 'う'12 603,17 9x11 #FFFFFFFF
+Sprite '!'12 616,17 2x11 #FFFFFFFF
+Sprite ico_save 624,18 12x12 #FFFFFFFF
