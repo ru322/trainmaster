@@ -11,7 +11,7 @@ use sdl2::video::{FullscreenType, WindowContext};
 use sdl2::{GameControllerSubsystem, JoystickSubsystem};
 use tm_platform_api::{
     AssetBundle, AudioCmd, DrawList, LOGICAL_HEIGHT, LOGICAL_WIDTH, MonoTime, PhysicalInput,
-    Platform, PlatformError, PlatformStats,
+    Platform, PlatformError, PlatformStats, RENDER_HEIGHT, RENDER_WIDTH,
 };
 
 use crate::audio::device::AudioOut;
@@ -98,6 +98,10 @@ pub struct SdlPlatform<'tc> {
     frame_no: u64,
     bundle: Option<AssetBundle>,
     dev_hotkeys: bool,
+    /// F11 でフルスクリーンを切り替えられる(KMSDRM でない、ウィンドウのある環境。KMSDRM では開発用のキーが有効でも切り替えない)。
+    fullscreen_key: bool,
+    /// F11 でフルスクリーンから戻るウィンドウの大きさ。
+    window_size: (u32, u32),
     draw_log: DrawLog,
 }
 
@@ -108,7 +112,8 @@ impl<'tc> SdlPlatform<'tc> {
         tc: &'tc TextureCreator<WindowContext>,
         cfg: &SdlConfig,
     ) -> Result<SdlPlatform<'tc>, PlatformError> {
-        let renderer = Renderer::new(&mut core.canvas, tc, cfg.batch);
+        let renderer = Renderer::new(&mut core.canvas, cfg.batch);
+        let fullscreen_key = !core.kmsdrm;
         let audio = if cfg.audio.enabled {
             match core
                 .sdl
@@ -155,11 +160,16 @@ impl<'tc> SdlPlatform<'tc> {
             frame_no: 0,
             bundle: None,
             dev_hotkeys: cfg.dev_hotkeys,
+            fullscreen_key,
+            window_size: (
+                LOGICAL_WIDTH * u32::from(cfg.window_scale.max(1)),
+                LOGICAL_HEIGHT * u32::from(cfg.window_scale.max(1)),
+            ),
             draw_log: DrawLog::default(),
         })
     }
 
-    /// いまのフレームの画素(RGBA、640×360、行優先)。直接描画モードではウィンドウから読む。
+    /// いまのフレームの画素(RGBA、描画の解像度 1920×1080、行優先)。ウィンドウに直接描いたときはウィンドウから読む。
     pub fn capture_frame(&mut self) -> Result<Vec<u8>, PlatformError> {
         self.renderer
             .read_frame(&mut self.core.canvas)
@@ -179,10 +189,15 @@ impl<'tc> SdlPlatform<'tc> {
     pub(crate) fn handle_event(&mut self, event: Event, out: &mut Vec<PhysicalInput>) {
         match event {
             Event::KeyDown {
-                scancode: Some(sc @ (Scancode::F11 | Scancode::F12)),
+                scancode: Some(Scancode::F11),
                 repeat: false,
                 ..
-            } if self.dev_hotkeys => self.dev_hotkey(sc),
+            } if self.fullscreen_key => self.dev_hotkey(Scancode::F11),
+            Event::KeyDown {
+                scancode: Some(Scancode::F12),
+                repeat: false,
+                ..
+            } if self.dev_hotkeys => self.dev_hotkey(Scancode::F12),
             Event::RenderTargetsReset { .. } => self.renderer.invalidate_layers(),
             Event::RenderDeviceReset { .. } => {
                 log::warn!("レンダラのデバイスがリセットされたのでテクスチャを作り直す");
@@ -211,6 +226,7 @@ impl<'tc> SdlPlatform<'tc> {
     fn dev_hotkey(&mut self, sc: Scancode) {
         match sc {
             Scancode::F11 => {
+                let (w, h) = self.window_size;
                 let window = self.core.canvas.window_mut();
                 let next = match window.fullscreen_state() {
                     FullscreenType::Off => FullscreenType::Desktop,
@@ -219,12 +235,21 @@ impl<'tc> SdlPlatform<'tc> {
                 if let Err(e) = window.set_fullscreen(next) {
                     log::warn!("F11: {e}");
                 }
+                if next == FullscreenType::Off {
+                    if let Err(e) = window.set_size(w, h) {
+                        log::warn!("F11: {e}");
+                    }
+                    window.set_position(
+                        sdl2::video::WindowPos::Centered,
+                        sdl2::video::WindowPos::Centered,
+                    );
+                }
             }
             Scancode::F12 => {
                 let path = format!("/tmp/trainmaster-{}.rgba", self.frame_no);
                 match self.capture_frame() {
                     Ok(px) => match std::fs::write(&path, px) {
-                        Ok(()) => log::info!("F12: {path}({LOGICAL_WIDTH}×{LOGICAL_HEIGHT} RGBA)"),
+                        Ok(()) => log::info!("F12: {path}({RENDER_WIDTH}×{RENDER_HEIGHT} RGBA)"),
                         Err(e) => log::warn!("F12: {path}: {e}"),
                     },
                     Err(e) => log::warn!("F12: {e:?}"),
@@ -250,7 +275,12 @@ impl<'tc> SdlPlatform<'tc> {
         self.renderer.draw(&mut self.core.canvas, self.tc, list)
     }
 
-    /// フレームテクスチャを作れなかった場合の直接描画モードにする。
+    /// KMSDRM(実機)と同じく F11 を受け付けない状態にする。
+    pub(crate) fn act_as_kmsdrm(&mut self) {
+        self.fullscreen_key = false;
+    }
+
+    /// レンダーターゲットが使えない場合(層をその場で描く)にする。
     pub(crate) fn force_direct(&mut self) {
         self.renderer.inject.frame_tex = true;
         let r = self

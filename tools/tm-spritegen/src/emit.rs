@@ -58,7 +58,11 @@ pub struct SpriteRow<'a> {
     pub name: &'a str,
     /// 左上(ページの絶対座標)。
     pub pos: (u32, u32),
-    /// 寸法。
+    /// アトラスの画素の寸法。
+    pub texels: (u32, u32),
+    /// 大きい版の左上と寸法。
+    pub alt: Option<((u32, u32), (u32, u32))>,
+    /// 設計の寸法(`SpriteMeta`)。
     pub size: (u32, u32),
     /// 基準点。
     pub pivot: (i32, i32),
@@ -80,13 +84,34 @@ pub fn sprites_rs(
         "pub const SPRITE_STRIP: StripInfo = StripInfo {{ page: {}, y: {}, height: {} }};",
         strip.page, strip.y, strip.height
     );
+    let _ = writeln!(
+        s,
+        "pub const SPRITE_RENDER_SCALE: u32 = {};",
+        strip.render_scale
+    );
     let _ = writeln!(s, "pub const SPRITE_COUNT: usize = {};", rows.len());
     let _ = writeln!(s, "pub static SPRITE_RECTS: [SpriteRect; SPRITE_COUNT] = [");
     for r in rows {
         let _ = writeln!(
             s,
             "    SpriteRect {{ atlas: {}, x: {}, y: {}, w: {}, h: {} }},",
-            strip.page, r.pos.0, r.pos.1, r.size.0, r.size.1
+            strip.page, r.pos.0, r.pos.1, r.texels.0, r.texels.1
+        );
+    }
+    s.push_str("];\n");
+    let alts: Vec<(usize, &SpriteRow<'_>)> = rows
+        .iter()
+        .enumerate()
+        .filter(|(_, r)| r.alt.is_some())
+        .collect();
+    let _ = writeln!(s, "pub const SPRITE_ALT_COUNT: usize = {};", alts.len());
+    s.push_str("pub static SPRITE_ALT: [SpriteAlt; SPRITE_ALT_COUNT] = [\n");
+    for (i, r) in alts {
+        let ((x, y), (w, h)) = r.alt.expect("大きい版");
+        let _ = writeln!(
+            s,
+            "    SpriteAlt {{ id: SpriteId({i}), rect: SpriteRect {{ atlas: {}, x: {x}, y: {y}, w: {w}, h: {h} }} }},",
+            strip.page
         );
     }
     s.push_str("];\n");
@@ -126,7 +151,15 @@ pub fn sprites_rs(
             })
             .collect()
     };
+    if let Some(tile) = resolved.track_tile {
+        let [a, b, c, d] = crate::draw::TRACK_PENS;
+        let [e, f] = crate::draw::TRACK_LANES;
+        let _ = writeln!(s, "pub const TRACK_TILE: u16 = {tile};");
+        let _ = writeln!(s, "pub const TRACK_PENS: [u16; 4] = [{a}, {b}, {c}, {d}];");
+        let _ = writeln!(s, "pub const TRACK_LANES: [u16; 2] = [{e}, {f}];");
+    }
     emit_table(&mut s, &ids, "TRN", &dir_names("trn_", ""))?;
+    emit_table(&mut s, &ids, "TRN_GLASS", &dir_names("trn_glass_", ""))?;
     emit_table(&mut s, &ids, "TRK_RAIL_O", &dir_names("trk_rail_o_", ""))?;
     emit_table(&mut s, &ids, "TRK_RAIL_F", &dir_names("trk_rail_f_", ""))?;
     if emit_nested(&mut s, &ids, "TRK_BAND_O", &bands("trk_band_o_"))? {

@@ -125,13 +125,54 @@ const UI_SCREEN: Tolerance = Tolerance {
     over2_permille: 10,
 };
 
-/// 描画の 4 通り: (バッチの方式, 直接描画モードか)。
-const MODES: [(BatchMode, bool); 4] = [
-    (BatchMode::Geometry, false),
-    (BatchMode::Copy, false),
-    (BatchMode::Geometry, true),
-    (BatchMode::Copy, true),
+/// 描き先の 3 通り。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Path {
+    /// 640×360 のウィンドウ: フレームテクスチャ(1920×1080)に描いて縮める。読む画素はフレームテクスチャ(アルファあり)。
+    Frame,
+    /// 1920×1080 のウィンドウ: ウィンドウに直接描く(実機と同じ)。層はキャッシュ。
+    Window,
+    /// 1920×1080 のウィンドウで、レンダーターゲットが使えない(層をその場描き)。
+    NoTargets,
+}
+
+impl Path {
+    /// ウィンドウを読むのでアルファがない。
+    fn rgb_only(self) -> bool {
+        self != Path::Frame
+    }
+}
+
+/// 描画の 6 通り: (バッチの方式, 描き先)。
+const MODES: [(BatchMode, Path); 6] = [
+    (BatchMode::Geometry, Path::Frame),
+    (BatchMode::Copy, Path::Frame),
+    (BatchMode::Geometry, Path::Window),
+    (BatchMode::Copy, Path::Window),
+    (BatchMode::Geometry, Path::NoTargets),
+    (BatchMode::Copy, Path::NoTargets),
 ];
+
+/// その描き先のウィンドウの設定。
+fn path_config(batch: BatchMode, path: Path) -> SdlConfig {
+    let mut cfg = config(batch);
+    if path != Path::Frame {
+        cfg.display = DisplayMode::Windowed { scale: 3 };
+    }
+    cfg
+}
+
+/// `with_platform` の中で描き先をそろえる。
+fn set_path(p: &mut SdlPlatform<'_>, path: Path) {
+    if path == Path::NoTargets {
+        p.force_direct();
+    }
+}
+
+/// 描画の画素の論理の画素 `(x, y)` の中心の添字(RGBA の先頭)。
+fn at_logical(x: usize, y: usize) -> usize {
+    ((3 * y + 1) * 1920 + 3 * x + 1) * 4
+}
 
 /// `list` をその方式で描いて読んだ画素。
 fn sdl_frame(p: &mut SdlPlatform<'_>, list: &DrawList) -> Vec<u8> {
@@ -163,8 +204,8 @@ fn assert_close(got: &[u8], want: &[u8], rgb_only: bool, what: &str, tol: Tolera
         over2 += usize::from(d > 2);
         if d > tol.max {
             bad.push((
-                i % 640,
-                i / 640,
+                i % 1920,
+                i / 1920,
                 d,
                 [g[0], g[1], g[2], g[3]],
                 [w[0], w[1], w[2], w[3]],
@@ -201,7 +242,7 @@ fn dump(name: &str, rgba: &[u8]) {
             })
             .collect();
         let path = std::path::Path::new(&dir).join(format!("{safe}.png"));
-        std::fs::write(&path, png(640, 360, rgba)).expect("PNG を書けない");
+        std::fs::write(&path, png(1920, 1080, rgba)).expect("PNG を書けない");
     }
 }
 
@@ -346,6 +387,7 @@ fn test_assets() -> &'static AssetBundle {
         AssetBundle {
             atlases,
             sprites,
+            alt: &[],
             sounds: &[],
             white: SpriteId(0),
         }

@@ -55,7 +55,7 @@ fn geo(v0: u64, ratio: u64) -> ValueFormula {
 fn spec_01() -> BalanceSpec {
     use ParamKey::*;
     BalanceSpec {
-        format_version: 4,
+        format_version: 5,
         map: MapRules {
             width: 40,
             height: 18,
@@ -121,7 +121,10 @@ fn spec_01() -> BalanceSpec {
                 tile_cap: 200,
                 free_below_level: 1,
             },
-            upgrade_floor: UpgradeFloorRules { behind: 3 },
+            upgrade_floor: UpgradeFloorRules {
+                behind: 3,
+                from_level: 4,
+            },
         },
     }
 }
@@ -244,10 +247,14 @@ fn upgrade_floor_follows_birth_level_and_unlock_m8() {
     let t = BalanceTable::builtin();
     let (c, l) = (CompanyLevel, Level);
     let f = |p, born| t.floor_level(p, c(born));
-    for born in 0..=2 {
-        assert_eq!(f(ParamKey::S1Spawn, born), l(0), "Lv{born}");
+    for born in 0..=3 {
+        assert_eq!(
+            f(ParamKey::S1Spawn, born),
+            l(0),
+            "Lv{born}: 下限は会社 Lv4 から(M10)"
+        );
     }
-    assert_eq!(f(ParamKey::S1Spawn, 3), l(4));
+    assert_eq!(f(ParamKey::S1Spawn, 4), l(6));
     assert_eq!(f(ParamKey::S2Fare, 4), l(6));
     assert_eq!(f(ParamKey::S3StationCap, 3), l(0));
     assert_eq!(f(ParamKey::S3StationCap, 4), l(6));
@@ -273,10 +280,68 @@ fn upgrade_floor_follows_birth_level_and_unlock_m8() {
         t.upgrade_cost(ParamKey::S1Spawn, l(7), c(4)),
         t.cost(ParamKey::S1Spawn, l(7))
     );
+    let u = |p, from, born| t.upgrade_cost(p, l(from), c(born));
+    let era = |born: u8| t.cost(ParamKey::S1Spawn, l(t.cap(c(born - 3))));
+    for p in [ParamKey::S4Platform, ParamKey::T1Speed, ParamKey::T5Cars] {
+        assert_eq!(
+            u(p, 0, 3),
+            t.cost(p, l(0)),
+            "{p:?}: 会社 Lv3 で生まれたものは元の値段"
+        );
+        assert_eq!(u(p, 0, 0), t.cost(p, l(0)), "{p:?}");
+    }
+    assert_eq!(
+        u(ParamKey::T1Speed, 0, 4),
+        era(4),
+        "固有上限のある設備も基準の値段より安くならない(M10)"
+    );
+    assert_eq!(
+        u(ParamKey::S4Platform, 0, 4),
+        t.cost(ParamKey::S4Platform, l(0)),
+        "S4 は会社 Lv2 で解放。4 − 3 < 2"
+    );
+    assert_eq!(u(ParamKey::S4Platform, 0, 5), era(5));
+    assert_eq!(u(ParamKey::S4Platform, 7, 24), era(24));
+    assert_eq!(u(ParamKey::T2Crowding, 5, 7), era(7));
+    assert_eq!(u(ParamKey::R3Attractiveness, 0, 6), era(6));
+    assert_eq!(
+        u(ParamKey::R2LineSlots, 0, 24),
+        t.cost(ParamKey::R2LineSlots, l(0)),
+        "R2 は会社全体"
+    );
+    assert_eq!(u(ParamKey::R1MaxTrains, 6, 6), era(6));
+    let mut spec = t.spec().clone();
+    spec.params[ParamKey::T1Speed.index()].base_yen = 10_u64.pow(9);
+    let big = BalanceTable::from_spec(spec).unwrap();
+    assert_eq!(
+        big.upgrade_cost(ParamKey::T1Speed, l(0), c(4)),
+        big.cost(ParamKey::T1Speed, l(0)),
+        "元の値段の方が高ければ元の値段"
+    );
     let s = |i| t.station_born_level(crate::ids::StationId(i));
     assert_eq!(
         [s(0), s(2), s(3), s(4), s(26)],
         [c(0), c(0), c(1), c(2), c(24)]
+    );
+}
+
+/// 値段の下限の基準(S1 の Lv cap(B − behind))は、検証を通る表ならいつも S1 の表の中にある。
+#[test]
+fn floor_reference_stays_inside_the_s1_table() {
+    let mut spec = spec_01();
+    param_mut(&mut spec, ParamKey::S1Spawn).intrinsic_max = Some(5);
+    assert_eq!(rule_of(spec), "BV-22");
+    let mut spec = spec_01();
+    param_mut(&mut spec, ParamKey::S1Spawn).intrinsic_max = Some(46);
+    let t = BalanceTable::from_spec(spec).expect("cap(24 − 3) = 46 なら通る");
+    for born in 0..=24 {
+        for p in ParamKey::ALL {
+            let _ = t.upgrade_cost(p, Level(0), CompanyLevel(born));
+        }
+    }
+    assert_eq!(
+        t.upgrade_cost(ParamKey::T1Speed, Level(0), CompanyLevel(24)),
+        t.cost(ParamKey::S1Spawn, Level(46))
     );
 }
 
@@ -345,8 +410,8 @@ fn each_rule_rejects_a_broken_value() {
     use ParamKey::*;
     type Mutation = Box<dyn Fn(&mut BalanceSpec)>;
     let cases: Vec<(&str, Mutation)> = vec![
-        ("BV-01", Box::new(|s| s.format_version = 3)),
-        ("BV-01", Box::new(|s| s.format_version = 5)),
+        ("BV-01", Box::new(|s| s.format_version = 4)),
+        ("BV-01", Box::new(|s| s.format_version = 6)),
         ("BV-02", Box::new(|s| s.params.swap(0, 1))),
         (
             "BV-02",
@@ -553,6 +618,10 @@ fn each_rule_rejects_a_broken_value() {
             }),
         ),
         ("BV-22", Box::new(|s| s.economy.upgrade_floor.behind = 0)),
+        (
+            "BV-22",
+            Box::new(|s| param_mut(s, S1Spawn).intrinsic_max = Some(45)),
+        ),
     ];
     for (rule, mutate) in cases {
         let mut s = spec_01();
@@ -844,8 +913,9 @@ fn omitted_cost_steps_is_empty_and_v1_is_rejected() {
         "format_version: 1",
         "format_version: 2",
         "format_version: 3",
+        "format_version: 4",
     ] {
-        let v = BUILTIN_BALANCE_RON.replace("format_version: 4", old);
+        let v = BUILTIN_BALANCE_RON.replace("format_version: 5", old);
         assert!(matches!(
             BalanceTable::from_ron_str(&v),
             Err(BalanceError::Invalid { rule: "BV-01", .. })

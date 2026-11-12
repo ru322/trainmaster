@@ -4,6 +4,14 @@
 pub const LOGICAL_WIDTH: u32 = 640;
 /// 論理解像度の高さ。
 pub const LOGICAL_HEIGHT: u32 = 360;
+/// 論理 1px あたりの描画の画素数。プラットフォームは論理座標をこの倍率で描く。
+pub const RENDER_SCALE: u32 = 3;
+/// 描画の解像度の幅(1920)。
+pub const RENDER_WIDTH: u32 = LOGICAL_WIDTH * RENDER_SCALE;
+/// 描画の解像度の高さ(1080)。
+pub const RENDER_HEIGHT: u32 = LOGICAL_HEIGHT * RENDER_SCALE;
+/// 細かい座標の単位の数(論理 1px = `SUBPX`)。1 単位は描画の 1 画素。
+pub const SUBPX: i32 = RENDER_SCALE as i32;
 
 /// ストレートアルファの色。`a` = 255 で不透明。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

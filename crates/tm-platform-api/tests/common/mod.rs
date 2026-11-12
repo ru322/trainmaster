@@ -40,6 +40,7 @@ pub fn bundle(
     AssetBundle {
         atlases: leak(atlases),
         sprites: leak(sprites),
+        alt: &[],
         sounds: leak(sounds),
         white: SpriteId(0),
     }

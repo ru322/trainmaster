@@ -18,6 +18,7 @@ fn expected_names() -> Vec<String> {
         v.push(format!("trk_rail_o_{d}"));
         v.push(format!("trk_rail_f_{d}"));
         v.push(format!("trn_{d}"));
+        v.push(format!("trn_glass_{d}"));
         for var in ["l1", "l0p", "l2p", "l0c", "l2c"] {
             v.push(format!("trk_band_o_{d}_{var}"));
             v.push(format!("trk_band_f_{d}_{var}"));
@@ -41,6 +42,9 @@ fn expected_names() -> Vec<String> {
         "title_logo",
     ] {
         v.push(n.into());
+    }
+    for c in ["tl", "tr", "bl", "br"] {
+        v.push(format!("ui_hole_{c}"));
     }
     for base in ["ui_win", "ui_popup", "ui_frame", "ui_sel"] {
         for s in ["tl", "t", "tr", "l", "c", "r", "bl", "b", "br"] {
@@ -99,22 +103,29 @@ fn all_sprites_of_15_5_2_are_generated() {
     let g = real();
     let names: Vec<String> = g.sprites.iter().map(|s| s.name.clone()).collect();
     assert_eq!(names, expected_names());
-    assert_eq!(names.len(), 218);
+    assert_eq!(names.len(), 230);
 }
 
 #[test]
 fn sizes_follow_the_list() {
     let g = real();
-    let size = |n: &str| {
-        let s = g.sprites.iter().find(|s| s.name == n).unwrap();
-        (s.image.w, s.image.h)
-    };
-    for s in g.sprites.iter().filter(|s| s.name.starts_with("trk_")) {
-        assert!(s.image.w <= 17 && s.image.h <= 17, "{}", s.name);
+    let size = |n: &str| g.sprites.iter().find(|s| s.name == n).unwrap().size;
+    for s in &g.sprites {
+        let r = 3 * s.scale;
+        assert_eq!(
+            (s.image.w, s.image.h),
+            (s.size.0 * r, s.size.1 * r),
+            "{}",
+            s.name
+        );
     }
-    assert_eq!(size("trk_rail_o_e"), (17, 6));
-    assert_eq!(size("trk_rail_f_ne"), (15, 15));
-    assert_eq!(size("trk_rail_o_se"), (17, 17));
+    for s in g.sprites.iter().filter(|s| s.name.starts_with("trk_")) {
+        assert!(s.size.0 <= 14 && s.size.1 <= 14, "{}", s.name);
+        assert_eq!(s.scale, 2, "{}", s.name);
+    }
+    assert_eq!(size("trk_rail_o_e"), (14, 6));
+    assert_eq!(size("trk_rail_f_ne"), (12, 12));
+    assert_eq!(size("trk_rail_o_se"), (14, 14));
     for (n, d) in [
         ("stn_body", (14, 14)),
         ("stn_pass", (7, 7)),
@@ -145,12 +156,22 @@ fn sizes_follow_the_list() {
     }
 }
 
+/// 半透明の塗りは影だけ: 中間のアルファの画素は、透明の画素の近く(9×9 の中。丸い端どうしの細い切れ込みを含む)にある縁のアンチエイリアスか、影の縁だけ。
 #[test]
 fn only_shadow_is_translucent_and_logo_fits() {
     let g = real();
     for s in &g.sprites {
-        for p in &s.image.px {
-            assert!(p[3] == 0 || p[3] == 255 || p[3] == 96, "{}", s.name);
+        let img = &s.image;
+        for y in 0..img.h as i32 {
+            for x in 0..img.w as i32 {
+                let a = img.get(x, y)[3];
+                if a == 0 || a == 255 || a == 96 {
+                    continue;
+                }
+                let edge = (-4..=4)
+                    .any(|dy| (-4..=4).any(|dx| matches!(img.get(x + dx, y + dy)[3], 0 | 96)));
+                assert!(edge, "{} ({x}, {y}) α={a} は縁でない", s.name);
+            }
         }
     }
     assert!(g.rows_used <= g.strip.height);
@@ -169,6 +190,7 @@ fn sprite_tables_are_emitted() {
     let g = real();
     for t in [
         "pub const TRN: [SpriteId; 8]",
+        "pub const TRN_GLASS: [SpriteId; 8]",
         "pub const TRK_RAIL_O: [SpriteId; 8]",
         "pub const TRK_RAIL_F: [SpriteId; 8]",
         "pub const TRK_BAND_O: [[SpriteId; 5]; 8]",
@@ -181,6 +203,9 @@ fn sprite_tables_are_emitted() {
         "pub const NS_UI_POPUP: NineSlice",
         "pub const NS_UI_FRAME: NineSlice",
         "pub const NS_UI_SEL: NineSlice",
+        "pub const TRACK_TILE: u16 = 16;",
+        "pub const TRACK_PENS: [u16; 4] = [6, 4, 4, 2];",
+        "pub const TRACK_LANES: [u16; 2] = [3, 2];",
     ] {
         assert!(g.sprites_rs.contains(t), "{t}");
     }
@@ -189,16 +214,23 @@ fn sprite_tables_are_emitted() {
 #[test]
 fn counts_match_the_design() {
     let g = real();
-    let pixels: u32 = g.sprites.iter().map(|s| s.image.w * s.image.h).sum();
-    assert_eq!(pixels, 33_587);
-    assert_eq!(g.rows_used, 57);
+    let pixels: u32 = g.sprites.iter().map(|s| s.size.0 * s.size.1).sum();
+    assert_eq!(pixels, 30_871, "設計の画素");
     let track: u32 = g
         .sprites
         .iter()
         .filter(|s| s.name.starts_with("trk_"))
-        .map(|s| s.image.w * s.image.h)
+        .map(|s| s.size.0 * s.size.1)
         .sum();
-    assert_eq!(track, 12_912);
+    assert_eq!(track, 8_592);
+    let texels: u32 = g
+        .sprites
+        .iter()
+        .map(|s| s.image.w * s.image.h + s.alt.as_ref().map_or(0, |a| a.w * a.h))
+        .sum();
+    assert_eq!(texels, TEXELS, "アトラスの画素");
+    assert_eq!(g.sprites.iter().filter(|s| s.alt.is_some()).count(), 24);
+    assert_eq!(g.rows_used, ROWS);
 }
 
 #[test]
@@ -258,7 +290,8 @@ fn text_and_shapes_in_the_art_have_enough_contrast() {
 fn stn_pass_has_a_black_outline() {
     let g = real();
     let s = g.sprites.iter().find(|s| s.name == "stn_pass").unwrap();
-    assert_eq!((s.image.w, s.image.h), (7, 7));
+    assert_eq!(s.size, (7, 7));
+    assert_eq!((s.image.w, s.image.h), (42, 42));
     let black = s.image.px.iter().filter(|p| **p == [0, 0, 0, 255]).count();
     let red = s
         .image
@@ -267,4 +300,28 @@ fn stn_pass_has_a_black_outline() {
         .filter(|p| **p == [0xC0, 0x39, 0x2B, 255])
         .count();
     assert!(black > red && red > 0);
+}
+
+const TEXELS: u32 = 682_056;
+const ROWS: u32 = 428;
+
+/// 説明の穴の四隅の覆い(`ui_hole_*`)は、`ui_sel` の角の外側とちょうど補い合う(アルファの和が 255)。
+#[test]
+fn hole_masks_complement_the_rounded_selection_corners() {
+    let g = real();
+    let find = |n: &str| g.sprites.iter().find(|s| s.name == n).unwrap();
+    for c in ["tl", "tr", "bl", "br"] {
+        let (mask, sel) = (find(&format!("ui_hole_{c}")), find(&format!("ui_sel_{c}")));
+        assert_eq!((mask.image.w, mask.image.h), (sel.image.w, sel.image.h));
+        for (m, s) in mask.image.px.iter().zip(&sel.image.px) {
+            let sum = u32::from(m[3]) + u32::from(s[3]);
+            assert!(sum <= 256, "{c}: 重なる {m:?} {s:?}");
+            if m[3] != 0 {
+                assert!(sum >= 254, "{c}: 角の外の縁で隙間 {m:?} {s:?}");
+            }
+        }
+        assert!(
+            mask.image.px.iter().any(|p| p[3] == 255) && mask.image.px.iter().any(|p| p[3] == 0)
+        );
+    }
 }

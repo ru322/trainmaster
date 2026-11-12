@@ -41,7 +41,8 @@ fn invalid(var: &'static str, value: &str) -> ConfigWarning {
 fn dev_default() -> PlatformEnv {
     PlatformEnv {
         target: false,
-        display: DisplayChoice::Windowed { scale: 2 },
+        display: DisplayChoice::Auto,
+        window_scale: 2,
         fps30: false,
         vsync: true,
         copy_batch: false,
@@ -96,6 +97,7 @@ fn app_t_17_valid_values() {
         PlatformEnv {
             target: false,
             display: DisplayChoice::Windowed { scale: 3 },
+            window_scale: 3,
             fps30: true,
             vsync: false,
             copy_batch: true,
@@ -121,8 +123,14 @@ fn app_t_17_valid_values() {
     let (_, p, _) = env(&[("TM_DISPLAY", "auto"), ("TM_WINDOW_SCALE", "6")]);
     assert_eq!(
         p.display,
-        DisplayChoice::Windowed { scale: 6 },
-        "開発機の auto"
+        DisplayChoice::Auto,
+        "開発機の auto はフルスクリーン(ドライバで決める)。TM_WINDOW_SCALE は window のときだけ"
+    );
+    let (_, p, _) = env(&[("TM_DISPLAY", "window"), ("TM_WINDOW_SCALE", "3")]);
+    assert_eq!(
+        p.display,
+        DisplayChoice::Windowed { scale: 3 },
+        "ウィンドウに戻せる"
     );
     let (_, p, _) = env(&[("SDL_VIDEODRIVER", "kmsdrm"), ("TM_DISPLAY", "window")]);
     assert_eq!(p.display, DisplayChoice::Windowed { scale: 2 });

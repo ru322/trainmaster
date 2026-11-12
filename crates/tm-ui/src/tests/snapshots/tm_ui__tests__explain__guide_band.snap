@@ -25,6 +25,6 @@ Sprite '方'12 578,340 12x12 #FFFFFFFF
 Sprite btn_key_x 596,340 16x16 #FFFFFFFF
 Sprite '戻'12 612,341 12x12 #FFFFFFFF
 Sprite 'る'12 625,341 10x11 #FFFFFFFF
-Sprite fx_dot 52,48 16x16 #FFD40093
-Sprite fx_dot 308,48 16x16 #FFD40093
-Sprite fx_dot 308,240 16x16 #FFD40093
+Sprite fx_dot 40,48 16x16 #FFD40093
+Sprite fx_dot 296,48 16x16 #FFD40093
+Sprite fx_dot 296,240 16x16 #FFD40093

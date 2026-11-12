@@ -250,6 +250,24 @@ fn inv21_line_born_level() {
     });
 }
 
+#[test]
+fn inv21_born_level_does_not_decrease_by_line_id() {
+    let mut g = valid();
+    let mut second = g.state.lines[0].clone();
+    second.id = crate::ids::LineId(1);
+    g.state.lines[0].born_level = CompanyLevel(1);
+    g.state.company.level = CompanyLevel(1);
+    g.state.lines.push(second);
+    assert_eq!(
+        super::inv21_line_born_level(&g.state)
+            .expect_err("減っている")
+            .id,
+        "INV-21"
+    );
+    g.state.lines[1].born_level = CompanyLevel(1);
+    assert!(super::inv21_line_born_level(&g.state).is_ok());
+}
+
 #[cfg(debug_assertions)]
 #[test]
 #[should_panic(expected = "INV-11")]

@@ -27,8 +27,8 @@ mod view;
 /// ルールの版。ルールを変えてゴールデン値を更新したら上げる(リプレイのヘッダと config hash に入る)。
 /// 2 = 1 週間のペース・線路の値段・40×18 のマップ(17 GW-17)。
 /// 3 = 駅の定員の伸び(S3 の `value_steps`)と、あとから出た駅・路線の強化の値段の下限(M8)。
-/// 4 = 駅の S1 は S3 のレベルまで(M9)。
-pub const RULES_VERSION: u32 = 4;
+/// 4 = 駅の S1 は S3 のレベルまで(M9)。5 = 固有上限のある設備にも値段の下限、下限は会社 Lv4 以降に出たものだけ(M10)。
+pub const RULES_VERSION: u32 = 5;
 
 pub use balance::{
     BALANCE_FORMAT_VERSION, BUILTIN_BALANCE_RON, BalanceError, BalanceSpec, BalanceTable,

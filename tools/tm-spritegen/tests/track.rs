@@ -22,14 +22,14 @@ type Ends = (Dir, Pt, Pt);
 type Chain = (Dir, Dir, [Pt; 3]);
 
 const DIRS: [Ends; 8] = [
-    (Dir::E, (6, 7), (17, 7)),
-    (Dir::W, (9, 7), (-2, 7)),
-    (Dir::N, (7, 9), (7, -2)),
-    (Dir::S, (7, 6), (7, 17)),
-    (Dir::NE, (5, 9), (16, -2)),
-    (Dir::SW, (8, 6), (-3, 17)),
-    (Dir::NW, (9, 9), (-2, -2)),
-    (Dir::SE, (6, 6), (17, 17)),
+    (Dir::E, (7, 7), (15, 7)),
+    (Dir::W, (7, 7), (-1, 7)),
+    (Dir::N, (7, 7), (7, -1)),
+    (Dir::S, (7, 7), (7, 15)),
+    (Dir::NE, (7, 7), (15, -1)),
+    (Dir::SW, (7, 7), (-1, 15)),
+    (Dir::NW, (7, 7), (-1, -1)),
+    (Dir::SE, (7, 7), (15, 15)),
 ];
 
 fn shift(dir: Dir, lane: i32) -> (i32, i32) {
@@ -42,9 +42,11 @@ fn shift(dir: Dir, lane: i32) -> (i32, i32) {
     }
 }
 
+/// 設計の 1px を 1 画素にし、画素の中心だけで描いた半区間(形の検査用)。
 fn cut(tile: u32, dir: Dir, part: Part) -> Cut {
     let pal = Palette::parse(PAL).unwrap();
-    track_half(tile, dir, part, &pal, "t").unwrap()
+    let (v, pivot) = track_half(tile, dir, part, &pal, "t").unwrap();
+    (v.render_samples(1, 1), pivot)
 }
 
 fn at(c: &Cut, x: i32, y: i32) -> [u8; 4] {
@@ -65,23 +67,67 @@ fn rail_extents_follow_15_5_8() {
         let f = cut(16, dir, Part::RailFill);
         let o = cut(16, dir, Part::RailOutline);
         let (fw, fh, ow, oh) = match dir {
-            Dir::E | Dir::W => (15, 4, 17, 6),
-            Dir::N | Dir::S => (4, 15, 6, 17),
-            _ => (15, 15, 17, 17),
+            Dir::E | Dir::W => (12, 4, 14, 6),
+            Dir::N | Dir::S => (4, 12, 6, 14),
+            _ => (12, 12, 14, 14),
         };
         assert_eq!((f.0.w, f.0.h), (fw, fh), "{dir:?} fill");
         assert_eq!((o.0.w, o.0.h), (ow, oh), "{dir:?} outline");
     }
     let f = cut(16, Dir::E, Part::RailFill);
-    assert_eq!(f.1, (-5, -6));
-    assert_eq!(at(&f, 6, 7), RAIL);
-    assert_eq!(at(&f, 5, 6), RAIL);
-    assert_eq!(at(&f, 4, 6), [0; 4]);
+    assert_eq!(f.1, (-6, -6));
+    assert_eq!(at(&f, 6, 6), RAIL);
+    assert_eq!(at(&f, 5, 6), [0; 4]);
+    assert_eq!(at(&f, 17, 9), RAIL);
+    assert_eq!(at(&f, 18, 9), [0; 4]);
     let o = cut(16, Dir::E, Part::RailOutline);
-    assert_eq!(o.1, (-4, -5));
-    assert_eq!(at(&o, 17, 5), OUTLINE);
-    assert_eq!(at(&o, 20, 10), OUTLINE);
-    assert_eq!(at(&o, 21, 10), [0; 4]);
+    assert_eq!(o.1, (-5, -5));
+    assert_eq!(at(&o, 5, 5), OUTLINE);
+    assert_eq!(at(&o, 4, 5), [0; 4]);
+    assert_eq!(at(&o, 18, 10), OUTLINE);
+    assert_eq!(at(&o, 19, 10), [0; 4]);
+}
+
+fn brush(part: Part) -> i32 {
+    match part {
+        Part::RailOutline => 6,
+        Part::RailFill | Part::BandOutline { .. } => 4,
+        Part::BandFill { .. } => 2,
+    }
+}
+
+/// どの半区間の絵も、中心から辺の中点(斜めは角)までの線分をブラシの幅でなぞった形の外接矩形にぴったり収まる。
+/// 中心の側も辺の側も、ブラシの半分より先へは出ない(曲がりで線が中心を越えて X にならない)。
+#[test]
+fn ink_is_the_segment_from_the_center_to_the_edge_widened_by_the_brush() {
+    for tile in [16, 20] {
+        let h = tile / 2;
+        for (dir, s, e) in DIRS {
+            let step = ((e.0 - s.0).signum(), (e.1 - s.1).signum());
+            let mut parts = vec![(Part::RailOutline, 1, false), (Part::RailFill, 1, false)];
+            for lane in 0..3u8 {
+                for conv in [false, true] {
+                    parts.push((Part::BandOutline { lane, conv }, lane, conv));
+                    parts.push((Part::BandFill { lane, conv }, lane, conv));
+                }
+            }
+            for (part, lane, conv) in parts {
+                let sh = shift(dir, i32::from(lane));
+                let edge = (h + step.0 * h + sh.0, h + step.1 * h + sh.1);
+                let center = if conv { (h, h) } else { (h + sh.0, h + sh.1) };
+                let b = brush(part) / 2;
+                let c = cut(tile as u32, dir, part);
+                let want = (
+                    center.0.min(edge.0) - b,
+                    center.1.min(edge.1) - b,
+                    center.0.max(edge.0) + b,
+                    center.1.max(edge.1) + b,
+                );
+                let got = (-c.1.0, -c.1.1, -c.1.0 + c.0.w as i32, -c.1.1 + c.0.h as i32);
+                assert_eq!(got, want, "tile {tile} {dir:?} {part:?}");
+            }
+        }
+    }
 }
 
 #[test]
@@ -386,11 +432,11 @@ fn converging_halves_of_a_bend_touch_at_the_center() {
 #[test]
 fn tile_20_uses_the_same_rules() {
     let f = cut(20, Dir::E, Part::RailFill);
-    assert_eq!((f.0.w, f.0.h), (17, 4));
+    assert_eq!((f.0.w, f.0.h), (14, 4));
     assert_eq!(at(&f, 8, 9), RAIL);
     assert_eq!(at(&f, 21, 9), RAIL);
     let d = cut(20, Dir::NE, Part::RailFill);
-    assert_eq!((d.0.w, d.0.h), (17, 17));
+    assert_eq!((d.0.w, d.0.h), (14, 14));
     assert_eq!(at(&d, 8, 11), RAIL);
     assert_eq!(at(&d, 21, -2), RAIL);
     let lane0 = cut(
@@ -659,5 +705,107 @@ fn bend_bands_do_not_cross_each_other() {
             "{lanes:?}: {}",
             components(&fills)
         );
+    }
+}
+
+/// 描画の倍率で描いた半区間(設計の 1px = `r` 画素、アンチエイリアスあり)。
+fn cut_at(r: u32, dir: Dir, part: Part) -> Cut {
+    let pal = Palette::parse(PAL).unwrap();
+    let (v, pivot) = track_half(16, dir, part, &pal, "t").unwrap();
+    (v.render(r), pivot)
+}
+
+/// 6 倍(マップの 1 マス 96 画素)の絵は、形の検査の絵と同じ外接矩形を 6 倍にした大きさで、縦横の縁はくっきり、斜めの縁だけ中間のアルファを持つ。
+#[test]
+fn native_halves_keep_the_box_and_antialias_only_slanted_edges() {
+    for (dir, _, _) in DIRS {
+        for part in [
+            Part::RailOutline,
+            Part::RailFill,
+            Part::BandFill {
+                lane: 0,
+                conv: true,
+            },
+        ] {
+            let one = cut(16, dir, part);
+            let six = cut_at(6, dir, part);
+            assert_eq!(
+                (six.0.w, six.0.h),
+                (one.0.w * 6, one.0.h * 6),
+                "{dir:?} {part:?}"
+            );
+            assert_eq!(six.1, one.1);
+            let partial = six.0.px.iter().filter(|p| p[3] != 0 && p[3] != 255).count();
+            let slanted = !matches!(dir, Dir::E | Dir::W | Dir::N | Dir::S)
+                || matches!(part, Part::BandFill { conv: true, .. });
+            assert_eq!(partial > 0, slanted, "{dir:?} {part:?}: {partial}");
+        }
+    }
+}
+
+/// 斜めにつないだ 3 マスを 6 倍で重ねると、帯の中身の芯(線の上)は継ぎ目でも欠けずに不透明のまま。
+#[test]
+fn native_diagonal_chain_has_no_seam_at_the_corners() {
+    let mut c: std::collections::BTreeMap<(i32, i32), u8> = Default::default();
+    for (k, (dir_a, dir_b)) in [(Dir::NE, Dir::SW); 3].into_iter().enumerate() {
+        let tile = (k as i32, -(k as i32));
+        for d in [dir_a, dir_b] {
+            let h = cut_at(
+                6,
+                d,
+                Part::BandFill {
+                    lane: 1,
+                    conv: false,
+                },
+            );
+            for y in 0..h.0.h as i32 {
+                for x in 0..h.0.w as i32 {
+                    let a = h.0.get(x, y)[3];
+                    let key = (tile.0 * 96 + x - h.1.0 * 6, tile.1 * 96 + y - h.1.1 * 6);
+                    let e = c.entry(key).or_insert(0);
+                    *e = (*e).max(a);
+                }
+            }
+        }
+    }
+    for t in 48..(96 * 2 + 48) {
+        assert_eq!(c.get(&(t, 96 - t)).copied(), Some(255), "芯 t={t}");
+        assert_eq!(c.get(&(t, 96 - t + 4)).copied(), Some(255), "芯の脇 t={t}");
+    }
+}
+
+/// 1 本の帯の縁(黒)は、同じ太さの線路の中身(灰色)を縁のアンチエイリアスまで覆う(斜めの縁に灰色の筋が出ない)。
+/// 赤い地に線路の縁 → 線路の中身 → 帯の縁の順に 6 倍で重ね、灰色が混ざると緑と青が 0 でなくなる。
+#[test]
+fn band_outline_hides_the_rail_fill_edges_on_diagonals() {
+    for dir in [Dir::NE, Dir::NW, Dir::SW, Dir::SE, Dir::E, Dir::N] {
+        let parts = [
+            cut_at(6, dir, Part::RailOutline),
+            cut_at(6, dir, Part::RailFill),
+            cut_at(
+                6,
+                dir,
+                Part::BandOutline {
+                    lane: 1,
+                    conv: false,
+                },
+            ),
+        ];
+        let mut c: std::collections::BTreeMap<(i32, i32), [u32; 3]> = Default::default();
+        for (img, pivot) in &parts {
+            for y in 0..img.h as i32 {
+                for x in 0..img.w as i32 {
+                    let p = img.get(x, y);
+                    let key = (x - pivot.0 * 6, y - pivot.1 * 6);
+                    let d = c.entry(key).or_insert([255, 0, 0]);
+                    let a = u32::from(p[3]);
+                    for k in 0..3 {
+                        d[k] = (u32::from(p[k]) * a + d[k] * (255 - a)) / 255;
+                    }
+                }
+            }
+        }
+        let gray = c.values().filter(|v| v[1] > 2 || v[2] > 2).count();
+        assert_eq!(gray, 0, "{dir:?}: 灰色の混ざる画素 {gray}");
     }
 }

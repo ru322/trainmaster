@@ -64,6 +64,18 @@ impl Image {
         self.remap(|x, y, w, h| (w - 1 - x, h - 1 - y))
     }
 
+    /// 画面で反時計回りに 90 度回す。
+    pub fn rot90(&self) -> Self {
+        let mut out = Self::new(self.h, self.w);
+        for y in 0..self.h {
+            for x in 0..self.w {
+                out.px[((self.w - 1 - x) * self.h + y) as usize] =
+                    self.px[(y * self.w + x) as usize];
+            }
+        }
+        out
+    }
+
     /// 色の置き換え(`from` と等しい画素を `to` にする)。
     pub fn recolor(&self, map: &[([u8; 4], [u8; 4])]) -> Self {
         let mut out = self.clone();

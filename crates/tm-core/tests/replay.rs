@@ -296,10 +296,14 @@ fn start_snapshot_is_checked() {
     );
 }
 
-/// 前の版(M7 の `RULES_VERSION` 2、M8 の 3)のリプレイは再生しない。panic しない。
+/// 前の版(M7 の `RULES_VERSION` 2、M8 の 3、M9 の 4)のリプレイは再生しない。panic しない。
 #[test]
 fn previous_rules_replay_is_refused() {
-    for (name, rules) in [("replay_rules2.ron", 2), ("replay_rules3.ron", 3)] {
+    for (name, rules) in [
+        ("replay_rules2.ron", 2),
+        ("replay_rules3.ron", 3),
+        ("replay_rules4.ron", 4),
+    ] {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("tests/golden")
             .join(name);

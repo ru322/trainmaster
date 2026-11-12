@@ -36,8 +36,8 @@ fn strip_positions_match_the_tools_output() {
     assert_eq!(PAGE_COUNT, 1);
     let total: u32 = STRIP_DIMS.iter().map(|(_, s)| s.height).sum();
     assert_eq!(total, PAGE_DIMS[0].1);
-    assert_eq!(PAGE_DIMS[0], (1024, 1024));
-    assert_eq!(ATLASES[0].rgba.len(), 1024 * 1024 * 4);
+    assert_eq!(PAGE_DIMS[0], (2048, 1536));
+    assert_eq!(ATLASES[0].rgba.len(), 2048 * 1536 * 4);
 }
 
 fn within(rect: &tm_platform_api::SpriteRect, s: tm_assets::atlas::StripInfo) -> bool {
@@ -80,8 +80,9 @@ fn strips_are_concatenated_in_order() {
     assert!(font_ink, "画素のないグリフがある");
 }
 
+/// スプライトの帯の画素は、パレットの色か、パレットの色の画素の近く(9×9 の中。丸い端どうしの細い切れ込みを含む)にある縁のアンチエイリアスの中間の色だけ。
 #[test]
-fn sprite_strip_pixels_are_all_palette_colors() {
+fn sprite_strip_pixels_are_palette_colors_or_their_antialiased_edges() {
     let pal = [
         palette::PAL_CLEAR,
         palette::PAL_OUTLINE,
@@ -99,15 +100,35 @@ fn sprite_strip_pixels_are_all_palette_colors() {
         palette::PAL_GREEN,
         palette::PAL_SHADOW,
         palette::PAL_ACCENT,
+        palette::PAL_GLASS,
+        palette::PAL_DARK,
     ]
     .map(|c| [c.r, c.g, c.b, c.a]);
     let (y0, h) = (SPRITE_STRIP.y as usize, SPRITE_STRIP.height as usize);
+    let w = PAGE_DIMS[0].0 as usize;
+    let (mut solid, mut edge) = (0usize, 0usize);
     for y in y0..y0 + h {
-        for x in 0..PAGE_DIMS[0].0 as usize {
-            assert!(pal.contains(&pixel(x, y)), "({x}, {y}): {:?}", pixel(x, y));
+        for x in 0..w {
+            if pal.contains(&pixel(x, y)) {
+                solid += 1;
+                continue;
+            }
+            edge += 1;
+            let near = (y.saturating_sub(4)..(y + 5).min(y0 + h))
+                .flat_map(|ny| (x.saturating_sub(4)..(x + 5).min(w)).map(move |nx| (nx, ny)))
+                .any(|(nx, ny)| pal.contains(&pixel(nx, ny)) && pixel(nx, ny)[3] != 0);
+            assert!(
+                near,
+                "({x}, {y}): {:?} は塗りの色から離れた中間の色",
+                pixel(x, y)
+            );
         }
     }
-    assert_eq!(pixel(1023, 767), [0, 0, 0, 0]);
+    assert!(
+        edge > 0 && edge * 4 < solid,
+        "中間の色 {edge}、パレットの色 {solid}"
+    );
+    assert_eq!(pixel(w - 1, y0 + h - 1), [0, 0, 0, 0]);
 }
 
 #[test]

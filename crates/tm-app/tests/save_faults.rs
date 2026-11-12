@@ -20,10 +20,11 @@ use tm_tutorial::Tutorial;
 use tm_ui::testing::draw_text;
 
 const GOLDEN: &str = "tests/golden/save_v1.tms";
-/// M7(`RULES_VERSION` 2)と M8(3)の版で書いた本物のセーブ。いまの版では読まない。
-const GOLDEN_OLD: [(&str, u32); 2] = [
+/// M7・M8・M9(`RULES_VERSION` 2・3・4)の版で書いた本物のセーブ。いまの版では読まない。
+const GOLDEN_OLD: [(&str, u32); 3] = [
     ("tests/golden/save_rules2.tms", 2),
     ("tests/golden/save_rules3.tms", 3),
+    ("tests/golden/save_rules4.tms", 4),
 ];
 
 fn temp_dir(name: &str) -> PathBuf {
@@ -231,7 +232,7 @@ fn app_t_27_corrupt_and_other_versions() {
         ),
         (
             "rules_version",
-            edit_header(&good, "rules_version: 4", "rules_version: 3"),
+            edit_header(&good, "rules_version: 5", "rules_version: 4"),
         ),
         (
             "config_hash",

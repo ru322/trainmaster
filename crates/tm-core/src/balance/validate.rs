@@ -271,10 +271,20 @@ fn check_structure(spec: &BalanceSpec) -> Result<(), BalanceError> {
         }
     }
 
-    if spec.economy.upgrade_floor.behind < 1 {
+    let floor = &spec.economy.upgrade_floor;
+    let s1_reach = spec.params[ParamKey::S1Spawn.index()]
+        .intrinsic_max
+        .map_or(cap_max, |m| u32::from(m).min(cap_max));
+    let floor_ref = company
+        .max_level
+        .checked_sub(floor.behind)
+        .map_or(0, |c| cap_u32(company, u32::from(c)));
+    if floor.behind < 1 || s1_reach < floor_ref {
         return Err(invalid(
             "BV-22",
-            format!("upgrade_floor = {:?}", spec.economy.upgrade_floor),
+            format!(
+                "upgrade_floor = {floor:?}、S1 の表は Lv{s1_reach} まで(基準の Lv{floor_ref} が要る)"
+            ),
         ));
     }
 

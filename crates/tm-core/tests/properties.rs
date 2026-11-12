@@ -784,7 +784,7 @@ fn first_line_and_extension_are_free_at_level_0() {
 }
 
 /// 経路の健全さ(11 §11.2): 乗り換えのある網で、到着の回数あたりの目的駅への到着が 0 でない。
-/// 割合は M8 で 1/5(駅で待てる人数が増えて、駅で待つ人が増えた。シード 1〜3 で 0.34・0.26・0.24)。
+/// 割合はシード 1〜3 で 0.343・0.352・0.329(M10)。
 #[cfg(feature = "test-support")]
 #[test]
 fn passengers_reach_their_destinations() {
@@ -792,7 +792,7 @@ fn passengers_reach_their_destinations() {
         let (g, _, _) = common::record(seed, &common::builtin(), 27_000, common::driver_recommend);
         let l = g.pax_ledger();
         assert!(l.is_conserved(), "{l:?}");
-        assert!(l.delivered * 5 > l.spawned, "シード {seed}: {l:?}");
+        assert!(l.delivered * 4 > l.spawned, "シード {seed}: {l:?}");
     }
     let mut g = common::full_build(4);
     let start = g.pax_ledger();

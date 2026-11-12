@@ -26,6 +26,7 @@ fn build() -> Result<AssetBundle, AssetError> {
     let bundle = AssetBundle {
         atlases: &atlas::ATLASES,
         sprites: &atlas::ALL_RECTS,
+        alt: &atlas::ALL_ALT,
         sounds: sound::sound_data()?,
         white: sprite::PX_WHITE,
     };

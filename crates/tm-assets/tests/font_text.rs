@@ -242,7 +242,12 @@ fn glyph_bitmap_sizes_match_the_atlas_rects() {
             let g = glyph(font, ch).unwrap();
             if let Some(b) = g.bitmap {
                 let r = ALL_RECTS[usize::from(b.sprite.0)];
-                assert_eq!((u16::from(b.w), u16::from(b.h)), (r.w, r.h), "{ch:?}");
+                let k = tm_platform_api::RENDER_SCALE as u16;
+                assert_eq!(
+                    (u16::from(b.w) * k, u16::from(b.h) * k),
+                    (r.w, r.h),
+                    "{ch:?}: 字形は論理の 3 倍の画素"
+                );
                 bitmaps += 1;
             }
         }

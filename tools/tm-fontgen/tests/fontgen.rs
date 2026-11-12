@@ -62,11 +62,21 @@ fn real_assets_counts() {
     }
     let s = g.checked.strip;
     assert_eq!(
-        (s.page, s.index, s.y, s.height, s.width),
-        (0, 0, 0, 768, 1024)
+        (s.page, s.index, s.y, s.height, s.width, s.render_scale),
+        (0, 0, 0, 896, 2048, 3)
     );
-    assert!(g.rows_used <= 768);
-    assert_eq!((g.image.w, g.image.h), (1024, 768));
+    assert!(g.rows_used <= 896);
+    assert_eq!((g.image.w, g.image.h), (2048, 896));
+    assert!(
+        g.glyphs_rs
+            .contains("pub const GLYPH_RENDER_SCALE: u32 = 3;")
+    );
+    for f in &g.faces {
+        assert_eq!(f.scale, 3);
+        for b in f.glyphs.iter().filter_map(|g| g.bitmap.as_ref()) {
+            assert!(b.w % 3 == 0 && b.h % 3 == 0 && b.x_off % 3 == 0 && b.y_off % 3 == 0);
+        }
+    }
     assert_all_texts(&g.checked.texts.entries);
     assert!(g.glyphs_rs.contains("pub const GLYPH_COUNT: usize = 804;"));
 }
@@ -95,12 +105,12 @@ fn rects_inside_strip_without_overlap() {
         .flat_map(|f| &f.glyphs)
         .filter_map(|g| g.bitmap.as_ref())
         .collect();
-    let mut cover = vec![false; 1024 * 768];
+    let mut cover = vec![false; 2048 * 896];
     for (b, &(x, y)) in bitmaps.iter().zip(&g.positions) {
-        assert!(x + b.w <= 1024 && y + b.h <= 768);
+        assert!(x + b.w <= 2048 && y + b.h <= 896);
         for yy in y..y + b.h {
             for xx in x..x + b.w {
-                let i = (yy * 1024 + xx) as usize;
+                let i = (yy * 2048 + xx) as usize;
                 assert!(!cover[i], "重なり ({xx}, {yy})");
                 cover[i] = true;
             }
@@ -234,7 +244,7 @@ fn strip_usage_over_the_threshold_warns() {
     let warns = |height: u32| {
         let mut i = inputs();
         i.atlas = format!(
-            "width = 1024\n[[page]]\nstrips = [ {{ owner = \"font\", height = {height} }} ]\n"
+            "width = 2048\nrender_scale = 3\n[[page]]\nstrips = [ {{ owner = \"font\", height = {height} }} ]\n"
         );
         let g = generate(&i).unwrap();
         assert_eq!(g.rows_used, used);
@@ -290,7 +300,11 @@ fn proof_images() {
         let per_page =
             ((proof::PAGE.1 - 2 * proof::MARGIN) / u32::from(f.def.line_height)) as usize;
         assert!(pages.len() >= lines.div_ceil(per_page));
-        assert!(pages.iter().all(|p| (p.w, p.h) == proof::PAGE));
+        assert!(
+            pages
+                .iter()
+                .all(|p| (p.w, p.h) == (proof::PAGE.0 * 3, proof::PAGE.1 * 3))
+        );
     }
     let sheet = &images.last().unwrap().1;
     let lit = sheet
@@ -299,9 +313,9 @@ fn proof_images() {
         .filter(|p| p[0] == 0xFF && p[1] == 0xFF)
         .count();
     assert!(lit > 0);
-    let x3 = proof::proof(g, 3);
-    assert_eq!((x3[0].1.w, x3[0].1.h), (1920, 1080));
-    assert_eq!(x3[0].1.get(5, 7), images[0].1.get(1, 2));
+    assert_eq!((images[0].1.w, images[0].1.h), (1920, 1080), "描画の解像度");
+    let x2 = proof::upscale(&images[0].1, 2);
+    assert_eq!(x2.get(3, 5), images[0].1.get(1, 2));
     assert_eq!(proof::proof(g, 1), images);
 }
 
@@ -313,6 +327,7 @@ fn strip_warning_boundary() {
         index: 0,
         y: 0,
         height: 100,
+        render_scale: 1,
     };
     assert_eq!(tm_fontgen::strip_warning(80, &strip, 80), None);
     assert!(tm_fontgen::strip_warning(81, &strip, 80).is_some());
@@ -321,11 +336,12 @@ fn strip_warning_boundary() {
 
 fn page_has_line(page: &tm_fontgen::emit::Image, face: &raster::Face, line: &str) -> bool {
     let img = tm_fontgen::preview(face, line, 1);
-    let lh = u32::from(face.def.line_height);
-    let w = img.w.min(page.w - proof::MARGIN);
-    (0..(page.h - proof::MARGIN) / lh).any(|i| {
-        let top = proof::MARGIN + i * lh;
-        (0..lh).all(|y| (0..w).all(|x| page.get(proof::MARGIN + x, top + y) == img.get(x, y)))
+    let k = face.scale;
+    let (lh, margin) = (u32::from(face.def.line_height) * k, proof::MARGIN * k);
+    let w = img.w.min(page.w - margin);
+    (0..(page.h - margin) / lh).any(|i| {
+        let top = margin + i * lh;
+        (0..lh).all(|y| (0..w).all(|x| page.get(margin + x, top + y) == img.get(x, y)))
     })
 }
 
@@ -402,8 +418,9 @@ fn font_hash_mismatch_is_e02() {
 fn strip_overflow_is_e11() {
     let mut i = inputs();
     let height = real().rows_used - 1;
-    i.atlas =
-        format!("width = 1024\n[[page]]\nstrips = [ {{ owner = \"font\", height = {height} }} ]\n");
+    i.atlas = format!(
+        "width = 2048\nrender_scale = 3\n[[page]]\nstrips = [ {{ owner = \"font\", height = {height} }} ]\n"
+    );
     assert_eq!(generate(&i).unwrap_err().code(), "FG-E11");
     assert_eq!(check(&i).unwrap_err().code(), "FG-E11");
 }
@@ -530,15 +547,15 @@ fn bitmap_golden_sha256() {
     };
     assert_eq!(
         digest('電'),
-        "3940c7446834d70a32a1554f5af402e40bf348d272f94ca496eef5947af62644"
+        "5ab09153bf9a3004d0c45797a530327c73827eb24b7f02bb824871229bd4565b"
     );
     assert_eq!(
         digest('あ'),
-        "132ad315d62196c6ad75b369f1c45c37e75318d24b02436e250628c5c1ed6aff"
+        "003bc12fb9dee41ab885a3a0a75ec79fe3b337d4748eba3ab36a301bee791e9b"
     );
     assert_eq!(
         digest('A'),
-        "a3485dbdb25a09bf6724fccb5a2e601baa239306211236fedbf7057e8fc188d6"
+        "8ed3a9953fc283455ee72b5e27d5ad865f3e07427b4b25b484ec591165e2d14d"
     );
 }
 
@@ -604,5 +621,47 @@ fn png_has_only_required_chunks() {
             .iter()
             .all(|k| matches!(k.as_str(), "IHDR" | "IDAT" | "IEND"))
     );
-    assert_eq!(&png[16..26], &[0, 0, 4, 0, 0, 0, 3, 0, 8, 6]);
+    assert_eq!(&png[16..26], &[0, 0, 8, 0, 0, 0, 3, 0x80, 8, 6]);
+}
+
+/// `alt_keys` の文言の字は、元の字形の枠をちょうど 2 倍にした大きい版を持ち、ほかの字は持たない。知らないキーは FG-E01。
+#[test]
+fn alt_keys_give_their_chars_a_twice_sized_bitmap() {
+    let g = real();
+    let head = g.face("Head16").unwrap();
+    let alts: String = head
+        .glyphs
+        .iter()
+        .filter(|gl| gl.alt.is_some())
+        .map(|gl| gl.ch)
+        .collect();
+    assert_eq!(alts, "!1円大数無量");
+    for gl in head.glyphs.iter().filter(|gl| gl.alt.is_some()) {
+        let (b, a) = (gl.bitmap.as_ref().unwrap(), gl.alt.as_ref().unwrap());
+        assert_eq!(
+            (a.w, a.h, a.x_off, a.y_off),
+            (2 * b.w, 2 * b.h, 2 * b.x_off, 2 * b.y_off),
+            "{}",
+            gl.ch
+        );
+        assert!(
+            a.alpha.iter().filter(|&&v| v == 255).count()
+                > 3 * b.alpha.iter().filter(|&&v| v == 255).count()
+        );
+    }
+    assert!(
+        g.face("Body12")
+            .unwrap()
+            .glyphs
+            .iter()
+            .all(|gl| gl.alt.is_none())
+    );
+    assert_eq!(g.alt_positions.len(), 7);
+    assert!(
+        g.glyphs_rs
+            .contains("pub const GLYPH_ALT_COUNT: usize = 7;")
+    );
+    let mut i = inputs();
+    i.config.face[1].alt_keys = vec!["no.such.key".into()];
+    assert_eq!(generate(&i).unwrap_err().code(), "FG-E01");
 }

@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod art;
 pub mod atlas;
 pub mod def;
 pub mod draw;
@@ -12,6 +13,8 @@ pub mod image;
 pub mod pack;
 pub mod palette;
 pub mod resolve;
+pub mod upscale;
+pub mod vector;
 
 pub use error::SpriteError;
 
@@ -58,6 +61,8 @@ pub struct Generated {
     pub sprites: Vec<Sprite>,
     /// `sprites` と同じ順の左上座標(ページの絶対座標)。
     pub positions: Vec<(u32, u32)>,
+    /// `sprites` と同じ順の、大きい版の左上座標。
+    pub alt_positions: Vec<Option<(u32, u32)>>,
     /// 帯の画像(幅はページの幅、高さは帯の高さ)。
     pub image: Image,
     /// 帯の PNG。
@@ -121,32 +126,51 @@ pub fn generate(src: &Sources, strip: &Strip) -> Result<Generated, SpriteError> 
             })?;
         files.push((name.clone(), f));
     }
-    let mut resolved = resolve::resolve(&files, &pal)?;
+    let mut resolved = resolve::resolve(&files, &pal, strip.render_scale)?;
     resolved.sprites.sort_by(|a, b| a.name.cmp(&b.name));
     check_frames_consecutive(&resolved)?;
-    let items: Vec<(u32, u32, &str)> = resolved
+    let alt_names: Vec<String> = resolved
         .sprites
         .iter()
-        .map(|s| (s.image.w, s.image.h, s.name.as_str()))
+        .map(|s| format!("{}@2", s.name))
         .collect();
-    let (positions, rows_used) = pack::pack(&items, strip)?;
+    let mut images: Vec<&Image> = Vec::new();
+    let mut items: Vec<(u32, u32, &str)> = Vec::new();
+    for (s, alt_name) in resolved.sprites.iter().zip(&alt_names) {
+        images.push(&s.image);
+        items.push((s.image.w, s.image.h, s.name.as_str()));
+        if let Some(a) = &s.alt {
+            images.push(a);
+            items.push((a.w, a.h, alt_name.as_str()));
+        }
+    }
+    let (placed, rows_used) = pack::pack(&items, strip)?;
     let mut image = Image::new(strip.width, strip.height);
-    for (s, &(x, y)) in resolved.sprites.iter().zip(&positions) {
-        for sy in 0..s.image.h {
-            for sx in 0..s.image.w {
-                let p = s.image.px[(sy * s.image.w + sx) as usize];
+    for (img, &(x, y)) in images.iter().zip(&placed) {
+        for sy in 0..img.h {
+            for sx in 0..img.w {
+                let p = img.px[(sy * img.w + sx) as usize];
                 image.set((x + sx) as i32, (y - strip.y + sy) as i32, p);
             }
         }
     }
+    let mut it = placed.into_iter();
+    let mut positions = Vec::with_capacity(resolved.sprites.len());
+    let mut alt_positions = Vec::with_capacity(resolved.sprites.len());
+    for s in &resolved.sprites {
+        positions.push(it.next().expect("詰めた数"));
+        alt_positions.push(s.alt.as_ref().map(|_| it.next().expect("詰めた数")));
+    }
     let rows: Vec<emit::SpriteRow<'_>> = resolved
         .sprites
         .iter()
-        .zip(&positions)
-        .map(|(s, &pos)| emit::SpriteRow {
+        .zip(positions.iter().zip(&alt_positions))
+        .map(|(s, (&pos, &alt))| emit::SpriteRow {
             name: &s.name,
             pos,
-            size: (s.image.w, s.image.h),
+            texels: (s.image.w, s.image.h),
+            alt: alt.zip(s.alt.as_ref().map(|a| (a.w, a.h))),
+            size: s.size,
             pivot: s.pivot,
             tint: s.tint,
         })
@@ -161,6 +185,7 @@ pub fn generate(src: &Sources, strip: &Strip) -> Result<Generated, SpriteError> 
         colors: pal.colors.len(),
         rows_used,
         positions,
+        alt_positions,
         sprites: resolved.sprites,
     })
 }
@@ -210,7 +235,7 @@ pub struct Layer {
     pub at: (i32, i32),
 }
 
-/// 層を基準点で位置合わせして重ね、市松の地(16px)の上に `scale` 倍で作る。
+/// 層を基準点で位置合わせして重ね、市松の地(設計の 16px)の上に、設計の 1px を `scale` 画素にして描く。
 pub fn compose(generated: &Generated, layers: &[Layer], scale: u32) -> Result<Image, String> {
     let mut found = Vec::new();
     for l in layers {
@@ -219,32 +244,35 @@ pub fn compose(generated: &Generated, layers: &[Layer], scale: u32) -> Result<Im
             .iter()
             .find(|s| s.name == l.name)
             .ok_or_else(|| format!("スプライト `{}` がない", l.name))?;
-        found.push((s, l, (l.at.0 - s.pivot.0, l.at.1 - s.pivot.1)));
+        let k = scale as i32;
+        let at = ((l.at.0 - s.pivot.0) * k, (l.at.1 - s.pivot.1) * k);
+        found.push((s.drawing.render(scale), l, at));
     }
     let x0 = found.iter().map(|f| f.2.0).min().unwrap_or(0);
     let y0 = found.iter().map(|f| f.2.1).min().unwrap_or(0);
     let x1 = found
         .iter()
-        .map(|f| f.2.0 + f.0.image.w as i32)
+        .map(|f| f.2.0 + f.0.w as i32)
         .max()
         .unwrap_or(1);
     let y1 = found
         .iter()
-        .map(|f| f.2.1 + f.0.image.h as i32)
+        .map(|f| f.2.1 + f.0.h as i32)
         .max()
         .unwrap_or(1);
     let (w, h) = ((x1 - x0) as u32, (y1 - y0) as u32);
-    let mut out = Image::new(w * scale, h * scale);
+    let tile = 16 * scale as i32;
+    let mut out = Image::new(w, h);
     for y in 0..h as i32 {
         for x in 0..w as i32 {
             let (wx, wy) = (x + x0, y + y0);
-            let mut c: [u8; 3] = if (wx.div_euclid(16) + wy.div_euclid(16)) & 1 == 0 {
+            let mut c: [u8; 3] = if (wx.div_euclid(tile) + wy.div_euclid(tile)) & 1 == 0 {
                 [0xE8, 0xE2, 0xCC]
             } else {
                 [0xDE, 0xD7, 0xBE]
             };
-            for (s, l, o) in &found {
-                let [r, g, b, a] = s.image.get(wx - o.0, wy - o.1);
+            for (img, l, o) in &found {
+                let [r, g, b, a] = img.get(wx - o.0, wy - o.1);
                 let t = l.tint.unwrap_or([255, 255, 255]);
                 let src = [r, g, b].map(|v| v as u32);
                 for k in 0..3 {
@@ -252,16 +280,7 @@ pub fn compose(generated: &Generated, layers: &[Layer], scale: u32) -> Result<Im
                     c[k] = ((v * a as u32 + c[k] as u32 * (255 - a as u32)) / 255) as u8;
                 }
             }
-            for dy in 0..scale {
-                for dx in 0..scale {
-                    let p = [c[0], c[1], c[2], 255];
-                    out.set(
-                        (x as u32 * scale + dx) as i32,
-                        (y as u32 * scale + dy) as i32,
-                        p,
-                    );
-                }
-            }
+            out.set(x, y, [c[0], c[1], c[2], 255]);
         }
     }
     Ok(out)

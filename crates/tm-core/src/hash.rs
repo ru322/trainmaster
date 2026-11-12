@@ -188,6 +188,7 @@ impl BalanceTable {
         h.write_u32(tr.tile_cap);
         h.write_u8(tr.free_below_level);
         h.write_u8(s.economy.upgrade_floor.behind);
+        h.write_u8(s.economy.upgrade_floor.from_level);
         h.finish()
     }
 }
@@ -255,7 +256,7 @@ mod tests {
         assert_eq!(BalanceTable::builtin().config_hash(), CONFIG_HASH_GOLDEN);
     }
 
-    const CONFIG_HASH_GOLDEN: u64 = 0xf3f3_ab0b_0d8a_1bcc;
+    const CONFIG_HASH_GOLDEN: u64 = 0xf50a_a032_1416_ff4b;
 
     #[test]
     fn config_hash_ignores_formatting_but_not_values() {

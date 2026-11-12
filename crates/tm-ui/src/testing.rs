@@ -446,6 +446,10 @@ pub fn draw_text(list: &DrawList) -> String {
                 layer.0,
                 rect(Rect { x, y, w, h })
             ),
+            DrawCmd::Quad { pts, color: c } => {
+                let p: Vec<String> = pts.iter().map(|(x, y)| format!("{x},{y}")).collect();
+                writeln!(s, "Quad {} {}", p.join(" "), color(c))
+            }
             DrawCmd::EndCachedLayer => writeln!(s, "EndLayer"),
             DrawCmd::DrawCachedLayer { layer } => writeln!(s, "DrawLayer {}", layer.0),
         };

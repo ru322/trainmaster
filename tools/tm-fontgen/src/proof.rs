@@ -14,7 +14,7 @@ pub const TEXT_COLOR: [u8; 3] = [0xFF, 0xFF, 0xFF];
 pub const LABEL_COLOR: [u8; 3] = [0xA6, 0xAE, 0xC0];
 /// 漢字の一覧の枠の色。
 pub const GRID_COLOR: [u8; 3] = [0x3A, 0x46, 0x6A];
-/// `proof` の 1 頁の大きさ(論理解像度 640 × 360)。
+/// `proof` の 1 頁の大きさ(論理解像度 640 × 360。画像は描画の倍率をかけた大きさ)。
 pub const PAGE: (u32, u32) = (640, 360);
 /// `proof` の頁の余白。
 pub const MARGIN: u32 = 4;
@@ -29,10 +29,12 @@ fn line_width(face: &Face, line: &str) -> u32 {
         .sum()
 }
 
-/// 1 行を 15 §4.10 の規則で描く(ペンは整数、フォントにない字は「?」)。
+/// 1 行を 15 §4.10 の規則で描く(ペンは論理 px の整数、フォントにない字は「?」)。`x` と `baseline` は論理 px。
 fn draw_line(img: &mut Image, face: &Face, x: i32, baseline: i32, line: &str, color: [u8; 3]) {
     let fallback = face.glyph('?');
-    let mut pen = x;
+    let k = face.scale as i32;
+    let baseline = baseline * k;
+    let mut pen = x * k;
     for c in line.chars() {
         let Some(gl) = face.glyph(c).or(fallback) else {
             continue;
@@ -53,13 +55,14 @@ fn draw_line(img: &mut Image, face: &Face, x: i32, baseline: i32, line: &str, co
                 }
             }
         }
-        pen += gl.advance as i32;
+        pen += gl.advance as i32 * k;
     }
 }
 
-fn background(w: u32, h: u32) -> Image {
+/// 論理 px の大きさ `w × h` の地(画像は描画の倍率 `k` 倍)。
+fn background(w: u32, h: u32, k: u32) -> Image {
     let [r, g, b] = PREVIEW_BG;
-    Image::new(w, h, [r, g, b, 255])
+    Image::new(w * k, h * k, [r, g, b, 255])
 }
 
 /// 最近傍で `scale` 倍にする。
@@ -73,7 +76,7 @@ pub fn upscale(img: &Image, scale: u32) -> Image {
     out
 }
 
-/// 文字列を並べ、パネルの地に白で描いて `scale` 倍にする。
+/// 文字列を並べ、パネルの地に白で描いて `scale` 倍にする(1 で描画の解像度のまま)。
 pub fn preview(face: &Face, text: &str, scale: u32) -> Image {
     let lines: Vec<&str> = text.split('\n').collect();
     let width = lines
@@ -83,7 +86,7 @@ pub fn preview(face: &Face, text: &str, scale: u32) -> Image {
         .unwrap_or(0)
         .max(1);
     let lh = u32::from(face.def.line_height);
-    let mut img = background(width, lh * lines.len() as u32);
+    let mut img = background(width, lh * lines.len() as u32, face.scale);
     for (i, line) in lines.iter().enumerate() {
         let baseline = (i as u32 * lh + face.ascent) as i32;
         draw_line(&mut img, face, 0, baseline, line, TEXT_COLOR);
@@ -115,7 +118,7 @@ pub fn text_pages(face: &Face, entries: &[Entry], scale: u32) -> Vec<Image> {
     pages
         .iter()
         .map(|lines| {
-            let mut img = background(PAGE.0, PAGE.1);
+            let mut img = background(PAGE.0, PAGE.1, face.scale);
             for (i, &(line, color)) in lines.iter().enumerate() {
                 let baseline = (MARGIN + i as u32 * lh + face.ascent) as i32;
                 draw_line(&mut img, face, MARGIN as i32, baseline, line, color);
@@ -145,7 +148,8 @@ pub fn kanji_sheet(faces: &[Face], kanji: &[char], scale: u32) -> Image {
         .map(|f| u32::from(f.def.line_height) + rows * cell(f).1 + 1 + MARGIN)
         .sum::<u32>()
         + MARGIN;
-    let mut img = background(width, height);
+    let k = faces.first().map_or(1, |f| f.scale);
+    let mut img = background(width, height, k);
     let [r, g, b] = GRID_COLOR;
     let mut top = MARGIN;
     for f in faces {
@@ -160,10 +164,10 @@ pub fn kanji_sheet(faces: &[Face], kanji: &[char], scale: u32) -> Image {
         );
         top += u32::from(f.def.line_height);
         let (cw, ch) = cell(f);
-        for y in 0..=rows * ch {
-            for x in 0..=KANJI_COLUMNS * cw {
-                if x % cw == 0 || y % ch == 0 {
-                    img.set(MARGIN + x, top + y, [r, g, b, 255]);
+        for y in 0..=rows * ch * k {
+            for x in 0..=KANJI_COLUMNS * cw * k {
+                if x % (cw * k) == 0 || y % (ch * k) == 0 {
+                    img.set(MARGIN * k + x, top * k + y, [r, g, b, 255]);
                 }
             }
         }

@@ -19,3 +19,4 @@ tm-platform-api = { path = "../tm-platform-api" }
 [dev-dependencies]
 insta = "1"
 tm-core = { path = "../tm-core", features = ["test-support"] }
+tm-platform-api = { path = "../tm-platform-api", features = ["headless"] }

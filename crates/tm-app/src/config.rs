@@ -70,11 +70,11 @@ pub enum ExitAction {
 /// 表示の方式(`SdlConfig::display` に写す)。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DisplayChoice {
-    /// SDL に任せる(KMSDRM ならフルスクリーン)。
+    /// ビデオのドライバで決める(画面のない dummy・offscreen は 1280×720 のウィンドウ、それ以外は KMSDRM も開発機もフルスクリーン)。
     Auto,
     /// デスクトップの解像度のフルスクリーン。
     Fullscreen,
-    /// 640×360 × `scale` のウィンドウ。
+    /// 640×360 × `scale` のウィンドウ(3 で 1920×1080)。
     Windowed {
         /// 倍率(1..=6)。
         scale: u8,
@@ -88,6 +88,8 @@ pub struct PlatformEnv {
     pub target: bool,
     /// 表示の方式。
     pub display: DisplayChoice,
+    /// ウィンドウの倍率(`TM_WINDOW_SCALE`、640×360 の何倍か)。フルスクリーンから F11 で戻るウィンドウにも使う。
+    pub window_scale: u8,
     /// 30fps に落とす。
     pub fps30: bool,
     /// vsync を使う。
@@ -213,16 +215,14 @@ fn platform_env(env: &mut Env) -> PlatformEnv {
         .get("SDL_VIDEODRIVER")
         .is_some_and(|v| v.trim().eq_ignore_ascii_case("kmsdrm"));
     let scale = env.range("TM_WINDOW_SCALE", 1u8, 6).unwrap_or(2);
-    let display = match env.parse("TM_DISPLAY", |s| match s {
-        "auto" => Some(DisplayChoice::Auto),
-        "fullscreen" => Some(DisplayChoice::Fullscreen),
-        "window" => Some(DisplayChoice::Windowed { scale }),
-        _ => None,
-    }) {
-        Some(DisplayChoice::Auto) | None if !target => DisplayChoice::Windowed { scale },
-        Some(d) => d,
-        None => DisplayChoice::Auto,
-    };
+    let display = env
+        .parse("TM_DISPLAY", |s| match s {
+            "auto" => Some(DisplayChoice::Auto),
+            "fullscreen" => Some(DisplayChoice::Fullscreen),
+            "window" => Some(DisplayChoice::Windowed { scale }),
+            _ => None,
+        })
+        .unwrap_or(DisplayChoice::Auto);
     let fps30 = env
         .parse("TM_FPS", |s| match s {
             "60" => Some(false),
@@ -269,6 +269,7 @@ fn platform_env(env: &mut Env) -> PlatformEnv {
     PlatformEnv {
         target,
         display,
+        window_scale: scale,
         fps30,
         vsync,
         copy_batch,

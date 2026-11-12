@@ -16,6 +16,9 @@ pub struct FaceDef {
     pub line_height: u8,
     /// 被覆率の補正(0 = そのまま。15 §4.4)。
     pub contrast: i32,
+    /// 2 倍の大きさで描く文言のキー。その字に 2 倍の大きさの字形(大きい版)を作る。
+    #[serde(default)]
+    pub alt_keys: Vec<String>,
 }
 
 /// `[charset]`: 漢字以外の必ず入れる字。
@@ -158,11 +161,15 @@ pub struct Strip {
     pub y: u32,
     /// 帯の高さ(行)。
     pub height: u32,
+    /// 論理 1px の描画の画素数(`atlas.toml` の `render_scale`。省略は 1)。
+    pub render_scale: u32,
 }
 
 #[derive(Deserialize)]
 struct AtlasFile {
     width: u32,
+    #[serde(default)]
+    render_scale: Option<u32>,
     page: Vec<PageDef>,
 }
 
@@ -180,8 +187,12 @@ struct StripDef {
 /// `atlas.toml` から `owner` の帯を 1 つ探す(FG-E01)。
 pub fn parse_strip(text: &str, owner: &str, path: &str) -> Result<Strip, FontgenError> {
     let file: AtlasFile = toml::from_str(text).map_err(|e| bad(path, e.to_string()))?;
-    if file.width == 0 || file.width > 1024 {
-        return Err(bad(path, "width は 1〜1024"));
+    if file.width == 0 || file.width > 2048 {
+        return Err(bad(path, "width は 1〜2048"));
+    }
+    let render_scale = file.render_scale.unwrap_or(1);
+    if !(1..=4).contains(&render_scale) {
+        return Err(bad(path, "render_scale は 1〜4"));
     }
     let mut found = None;
     for (page, p) in file.page.iter().enumerate() {
@@ -197,14 +208,15 @@ pub fn parse_strip(text: &str, owner: &str, path: &str) -> Result<Strip, Fontgen
                     index: index as u32,
                     y,
                     height: s.height,
+                    render_scale,
                 });
             }
             y += s.height;
         }
-        if y > 1024 {
+        if y > 2048 {
             return Err(bad(
                 path,
-                format!("page {page} の帯の高さの合計 {y} が 1024 を超える"),
+                format!("page {page} の帯の高さの合計 {y} が 2048 を超える"),
             ));
         }
     }
@@ -232,7 +244,7 @@ mod tests {
     fn strip_errors_are_e01() {
         for (text, owner) in [
             (ATLAS, "nothing"),
-            ("width = 2048\npage = []", "font"),
+            ("width = 4096\npage = []", "font"),
             ("width = ", "font"),
         ] {
             assert_eq!(parse_strip(text, owner, "a").unwrap_err().code(), "FG-E01");

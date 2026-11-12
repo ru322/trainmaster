@@ -3,11 +3,11 @@
 /// 表示の方式。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DisplayMode {
-    /// KMSDRM ならフルスクリーン、そうでなければ `Windowed { scale: 2 }`。
+    /// 画面のない `dummy`・`offscreen` のドライバなら `Windowed { scale: 2 }`、それ以外(KMSDRM、開発機の X11・Wayland)はフルスクリーン。
     Auto,
-    /// デスクトップの解像度のフルスクリーン。
+    /// デスクトップの解像度のフルスクリーン。出力が 1920×1080 以上なら描画の画素をそのまま(整数倍)、小さければ縮めて写す。
     Fullscreen,
-    /// 640×360 × `scale` のウィンドウ。
+    /// 640×360 × `scale` のウィンドウ(3 で 1920×1080)。
     Windowed {
         /// 拡大の倍率。
         scale: u8,
@@ -48,6 +48,8 @@ pub struct AudioConfig {
 pub struct SdlConfig {
     /// 表示の方式。
     pub display: DisplayMode,
+    /// フルスクリーンから F11 で戻るウィンドウの倍率(640×360 の何倍か。既定 2)。
+    pub window_scale: u8,
     /// `SDL_RENDER_DRIVER` のヒント。`None` なら SDL に任せる。
     pub render_driver: Option<String>,
     /// vsync を使うか。
@@ -58,7 +60,7 @@ pub struct SdlConfig {
     pub batch: BatchMode,
     /// 音。
     pub audio: AudioConfig,
-    /// 開発用のキー(F11、F12)を有効にするか [14 §3.6.5]。
+    /// 開発用のキー(F12。F11 は KMSDRM でなければ常に使える)を有効にするか [14 §3.6.5]。
     pub dev_hotkeys: bool,
 }
 
@@ -72,10 +74,11 @@ impl SdlConfig {
         }
     }
 
-    /// 開発機の既定。
+    /// 開発機の既定(フルスクリーン。F11 でウィンドウと切り替え)。
     pub fn dev_default() -> Self {
         SdlConfig {
-            display: DisplayMode::Windowed { scale: 2 },
+            display: DisplayMode::Auto,
+            window_scale: 2,
             render_driver: None,
             vsync: true,
             frame_cap: FrameCap::Fps60,

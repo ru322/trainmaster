@@ -285,6 +285,12 @@ impl TitleScene {
             DECO_Y + TILE / 2,
             palette::LINES[0],
         );
+        b.map_sprite(
+            sprite::TRN_GLASS[Dir8::E as usize],
+            tx,
+            DECO_Y + TILE / 2,
+            palette::WHITE,
+        );
         match self.confirm {
             Some(c) => self.dialog.draw(b, c.yes),
             None => self.draw_menu(b, text),
@@ -436,6 +442,8 @@ pub(crate) struct PlayScene {
     /// マップのカーソル。
     pub cursor: GridPos,
     cursor_ready: bool,
+    /// このフレームで始めのカメラを置いた(最初の説明の箱に合わせて、動きを見せずに置き直せる)。
+    camera_new: bool,
     /// カメラ。
     pub camera: Camera,
     /// モード。
@@ -485,6 +493,7 @@ impl PlayScene {
         PlayScene {
             cursor: GridPos { x: 0, y: 0 },
             cursor_ready: false,
+            camera_new: false,
             camera: Camera::default(),
             mode: PlayMode::Map,
             settings_menu: None,
@@ -548,6 +557,7 @@ impl PlayScene {
             self.cursor_ready = true;
             let at = view.stations().map(|s| s.pos);
             self.camera.start(at, self.cursor, self.viewport(view));
+            self.camera_new = true;
         }
         // 出現の演出が終わった駅を層に入れるときも作り直す [13 §3.11]
         if self.map.as_ref().is_none_or(|m| {

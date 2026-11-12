@@ -1,150 +1,30 @@
-//! 目で確かめるための仮の描画。`TM_UI_DUMP_DIR` に PPM を書く(`cargo test -- --ignored dump_screens`)。
+//! 目で確かめるための描画。`SoftRaster` で描画の解像度(1920×1080)に描き、`TM_UI_DUMP_DIR` に PPM を書く(`cargo test -- --ignored dump_screens`)。
 
 use tm_input::Action;
-use tm_platform_api::{AssetBundle, Color, DrawCmd, DrawList, Rect};
+use tm_platform_api::{DrawList, RENDER_HEIGHT, RENDER_SCALE, RENDER_WIDTH, SoftRaster};
 
 use super::budget::busiest;
 use super::map::shared_lines;
 use super::{harness_with_line, plan};
 use crate::testing::UiHarness;
 
-const W: i32 = 640;
-const H: i32 = 360;
+const W: usize = RENDER_WIDTH as usize;
+const H: usize = RENDER_HEIGHT as usize;
 
-struct Canvas {
-    px: Vec<[u8; 3]>,
-    clip: Rect,
-    dx: i32,
-    dy: i32,
-}
-
-fn blend(dst: &mut [u8; 3], src: [u8; 4]) {
-    let a = u32::from(src[3]);
-    for i in 0..3 {
-        dst[i] = ((u32::from(src[i]) * a + u32::from(dst[i]) * (255 - a)) / 255) as u8;
-    }
-}
-
-impl Canvas {
-    fn put(&mut self, x: i32, y: i32, c: [u8; 4]) {
-        let (x, y) = (x + self.dx, y + self.dy);
-        let r = self.clip;
-        if x < r.x.max(0)
-            || y < r.y.max(0)
-            || x >= (r.x + r.w as i32).min(W)
-            || y >= (r.y + r.h as i32).min(H)
-        {
-            return;
-        }
-        blend(&mut self.px[(y * W + x) as usize], c);
-    }
-
-    fn fill(&mut self, r: Rect, c: Color) {
-        for y in r.y..r.y + r.h as i32 {
-            for x in r.x..r.x + r.w as i32 {
-                self.put(x, y, [c.r, c.g, c.b, c.a]);
-            }
-        }
-    }
-
-    fn cmd(&mut self, b: &AssetBundle, cmd: &DrawCmd, layer_size: (u32, u32)) {
-        match *cmd {
-            DrawCmd::Clear(c) => self.fill(
-                Rect {
-                    x: 0,
-                    y: 0,
-                    w: layer_size.0,
-                    h: layer_size.1,
-                },
-                c,
-            ),
-            DrawCmd::FillRect { rect, color } => self.fill(rect, color),
-            DrawCmd::Line {
-                x0,
-                y0,
-                x1,
-                y1,
-                color,
-            } => {
-                let n = (x1 - x0).abs().max((y1 - y0).abs()).max(1);
-                for i in 0..=n {
-                    self.put(
-                        x0 + (x1 - x0) * i / n,
-                        y0 + (y1 - y0) * i / n,
-                        [color.r, color.g, color.b, color.a],
-                    );
-                }
-            }
-            DrawCmd::Sprite { id, dst, tint } => {
-                let s = b.sprites[usize::from(id.0)];
-                let atlas = &b.atlases[usize::from(s.atlas)];
-                for y in 0..dst.h as i32 {
-                    for x in 0..dst.w as i32 {
-                        let sx = i32::from(s.x) + x * i32::from(s.w) / dst.w as i32;
-                        let sy = i32::from(s.y) + y * i32::from(s.h) / dst.h as i32;
-                        let o = ((sy as u32 * atlas.width + sx as u32) * 4) as usize;
-                        let p = &atlas.rgba[o..o + 4];
-                        let m = |a: u8, t: u8| (u32::from(a) * u32::from(t) / 255) as u8;
-                        self.put(
-                            dst.x + x,
-                            dst.y + y,
-                            [
-                                m(p[0], tint.r),
-                                m(p[1], tint.g),
-                                m(p[2], tint.b),
-                                m(p[3], tint.a),
-                            ],
-                        );
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
-/// 直接描画モードと同じ規則で描く(層は `DrawCachedLayer` の位置で平行移動して切り取る。14 §3.5.3)。
+/// 描画の解像度の RGB(1920×1080、行優先)。層は `DrawCachedLayer` の位置でその場描きする(14 §3.5.3)。
 pub(super) fn rasterize(list: &DrawList) -> Vec<[u8; 3]> {
     let b = tm_assets::bundle().expect("アセット");
-    let full = Rect {
-        x: 0,
-        y: 0,
-        w: W as u32,
-        h: H as u32,
-    };
-    let mut c = Canvas {
-        px: vec![[0; 3]; (W * H) as usize],
-        clip: full,
-        dx: 0,
-        dy: 0,
-    };
-    let mut layer: Option<(Rect, Vec<DrawCmd>)> = None;
-    let mut recording = false;
-    for cmd in &list.cmds {
-        match *cmd {
-            DrawCmd::BeginCachedLayer { x, y, w, h, .. } => {
-                layer = Some((Rect { x, y, w, h }, Vec::new()));
-                recording = true;
-            }
-            DrawCmd::EndCachedLayer => recording = false,
-            DrawCmd::DrawCachedLayer { .. } => {
-                if let Some((r, cmds)) = &layer {
-                    c.clip = *r;
-                    c.dx = r.x;
-                    c.dy = r.y;
-                    for cmd in cmds {
-                        c.cmd(b, cmd, (r.w, r.h));
-                    }
-                    c.clip = full;
-                    c.dx = 0;
-                    c.dy = 0;
-                }
-            }
-            _ if recording => layer.as_mut().expect("層").1.push(*cmd),
-            _ => c.cmd(b, cmd, (W as u32, H as u32)),
-        }
-    }
-    c.px
+    let mut s = SoftRaster::new();
+    s.draw(b, list);
+    s.pixels().chunks(4).map(|p| [p[0], p[1], p[2]]).collect()
+}
+
+/// 論理の画素(640×360)ごとに、その画素の中心にあたる描画の画素を取り出す。
+pub(super) fn logical(native: &[[u8; 3]]) -> Vec<[u8; 3]> {
+    let k = RENDER_SCALE as usize;
+    (0..H / k)
+        .flat_map(|y| (0..W / k).map(move |x| native[(y * k + k / 2) * W + x * k + k / 2]))
+        .collect()
 }
 
 pub(super) fn write_ppm(path: &std::path::Path, px: &[[u8; 3]]) {
@@ -236,7 +116,18 @@ fn dump_screens() {
         ..save
     });
     mark.frames(1);
+    let mut goal = harness_with_line();
+    let now = goal.now;
+    goal.ui.observe(
+        now,
+        &tm_core::GameEvent::GoalReached {
+            total_earned: tm_numeric::BigNum::ONE,
+        },
+        &mut Vec::new(),
+    );
+    goal.frames(18);
     for (name, h) in [
+        ("goal", &goal),
         ("title_save", &title_save),
         ("title_confirm1", &title_confirm1),
         ("title_confirm2", &title_confirm2),

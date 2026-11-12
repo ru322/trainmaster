@@ -139,6 +139,8 @@ pub struct Generated {
     pub faces: Vec<Face>,
     /// グリフの通し番号の順の左上(ページの絶対座標)。
     pub positions: Vec<(u32, u32)>,
+    /// 大きい版の (グリフの通し番号, 左上)。通し番号の昇順。
+    pub alt_positions: Vec<(u32, (u32, u32))>,
     /// 使った帯の行数。
     pub rows_used: u32,
     /// 帯の画像。
@@ -170,8 +172,16 @@ pub fn generate(inputs: &Inputs) -> Result<Generated, FontgenError> {
     let c = &inputs.config;
     let mut faces = Vec::with_capacity(c.face.len());
     for (i, def) in c.face.iter().enumerate() {
-        let font = raster::load_font(&inputs.font, def.size_px, &c.font)?;
-        faces.push(raster::rasterize_face(&font, def, &checked.chars, &c.font)?);
+        let k = checked.strip.render_scale;
+        let size = u32::from(def.size_px) * k;
+        let font = raster::load_font(&inputs.font, size, &c.font)?;
+        let mut face = raster::rasterize_face(&font, def, &checked.chars, &c.font, k)?;
+        if !def.alt_keys.is_empty() {
+            let chars = alt_chars(&checked.texts, &def.alt_keys, &c.font)?;
+            let font2 = raster::load_font(&inputs.font, 2 * size, &c.font)?;
+            raster::add_alt(&mut face, &font2, &chars, &c.font)?;
+        }
+        faces.push(face);
         if i == 0 {
             raster::check_glyphs(&font, &charset::allowed_chars(&checked.allowed))?;
         }
@@ -185,20 +195,41 @@ pub fn generate(inputs: &Inputs) -> Result<Generated, FontgenError> {
                 .filter_map(move |g| g.bitmap.as_ref().map(|b| (fi, g.ch, b)))
         })
         .collect();
+    let alts: Vec<(u32, usize, char, &raster::Bitmap)> = faces
+        .iter()
+        .enumerate()
+        .flat_map(|(fi, f)| f.glyphs.iter().map(move |g| (fi, g)))
+        .filter(|(_, g)| g.bitmap.is_some())
+        .enumerate()
+        .filter_map(|(serial, (fi, g))| g.alt.as_ref().map(|a| (serial as u32, fi, g.ch, a)))
+        .collect();
+    let face_count = faces.len();
     let items: Vec<pack::Item> = bitmaps
         .iter()
-        .map(|&(fi, ch, b)| pack::Item {
+        .map(|&(fi, ch, b)| (fi, ch, b, 1))
+        .chain(
+            alts.iter()
+                .map(|&(_, fi, ch, a)| (fi + face_count, ch, a, 2)),
+        )
+        .map(|(face, ch, b, k)| pack::Item {
             w: b.w,
             h: b.h,
-            size: u32::from(faces[fi].def.size_px),
+            size: u32::from(faces[face % face_count].def.size_px) * k,
             ch,
-            face: fi,
+            face,
         })
         .collect();
     let strip = checked.strip;
-    let (positions, rows_used) = pack::pack(&items, &strip, c.padding)?;
+    let (mut positions, rows_used) = pack::pack(&items, &strip, c.padding)?;
+    let alt_xy = positions.split_off(bitmaps.len());
+    let alt_positions: Vec<(u32, (u32, u32))> = alts
+        .iter()
+        .map(|a| a.0)
+        .zip(alt_xy.iter().copied())
+        .collect();
     let mut image = Image::new(strip.width, strip.height, [0; 4]);
-    for (&(_, _, b), &(x, y)) in bitmaps.iter().zip(&positions) {
+    let all = bitmaps.iter().map(|b| b.2).chain(alts.iter().map(|a| a.3));
+    for (b, &(x, y)) in all.zip(positions.iter().chain(&alt_xy)) {
         for by in 0..b.h {
             for bx in 0..b.w {
                 let a = b.alpha[(by * b.w + bx) as usize];
@@ -206,7 +237,13 @@ pub fn generate(inputs: &Inputs) -> Result<Generated, FontgenError> {
             }
         }
     }
-    let glyphs_rs = emit::glyphs_rs(&faces, &positions, &strip, &sha256_hex(&inputs.font));
+    let glyphs_rs = emit::glyphs_rs(
+        &faces,
+        &positions,
+        &alt_positions,
+        &strip,
+        &sha256_hex(&inputs.font),
+    );
     let mut warnings = checked.texts.warnings.clone();
     warnings.extend(strip_warning(rows_used, &strip, c.text.warn_strip_percent));
     Ok(Generated {
@@ -214,11 +251,42 @@ pub fn generate(inputs: &Inputs) -> Result<Generated, FontgenError> {
         checked,
         faces,
         positions,
+        alt_positions,
         rows_used,
         image,
         glyphs_rs,
         warnings,
     })
+}
+
+/// `keys` の文言に出る字(プレースホルダ `{…}`、空白、改行を除く)。知らないキーは FG-E01。
+fn alt_chars(
+    texts: &Texts,
+    keys: &[String],
+    path: &str,
+) -> Result<std::collections::BTreeSet<char>, FontgenError> {
+    let mut out = std::collections::BTreeSet::new();
+    for key in keys {
+        let Some(e) = texts.entries.iter().find(|e| &e.key == key) else {
+            return Err(FontgenError::Read {
+                path: path.into(),
+                message: format!("alt_keys の `{key}` が ja.toml にない"),
+            });
+        };
+        let mut depth = 0;
+        for ch in e.value.chars() {
+            match ch {
+                '{' => depth += 1,
+                '}' => depth -= 1,
+                ' ' | '\n' => {}
+                c if depth == 0 => {
+                    out.insert(c);
+                }
+                _ => {}
+            }
+        }
+    }
+    Ok(out)
 }
 
 /// 帯の使用率が `percent` を超えたときの警告(15 §3.2)。

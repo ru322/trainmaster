@@ -74,6 +74,7 @@ mod tests {
             index: 0,
             y,
             height,
+            render_scale: 1,
         }
     }
 

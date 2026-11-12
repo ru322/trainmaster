@@ -46,10 +46,11 @@ pub(crate) enum Mark {
 }
 
 impl Mark {
-    /// うすい黒の穴にする枠の矩形。
-    pub(crate) fn hole(self) -> Option<Rect> {
+    /// うすい黒の穴にする枠の矩形と、枠(`ui_sel`)を描く倍率。
+    pub(crate) fn hole(self) -> Option<(Rect, i32)> {
         match self {
-            Mark::Frame(r) | Mark::Tile(r) | Mark::Side(r) => Some(r),
+            Mark::Frame(r) | Mark::Side(r) => Some((r, 1)),
+            Mark::Tile(r) => Some((r, crate::layout::MAP_SCALE)),
             Mark::Line { .. } | Mark::Edge { .. } => None,
         }
     }

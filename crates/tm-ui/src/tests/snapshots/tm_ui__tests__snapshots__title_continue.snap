@@ -1,7 +1,9 @@
 ---
 source: crates/tm-ui/src/tests/snapshots.rs
+assertion_line: 30
 expression: after_deco(&h.draw_text())
 ---
+Sprite trn_glass_e 147,168 28x28 #FFFFFFFF
 Sprite ui_sel_tl 256,236 3x3 #FFFFFFFF
 Sprite ui_sel_t 259,236 122x3 #FFFFFFFF
 Sprite ui_sel_tr 381,236 3x3 #FFFFFFFF

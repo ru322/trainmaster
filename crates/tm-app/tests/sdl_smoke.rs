@@ -276,8 +276,8 @@ fn line_price(c1_yen: u64) -> UiHarness {
     h
 }
 
-/// 始めの 3 駅が表示域(20 × 9 マス)に入りきらない駅の位置。始めのカメラは 3 駅の外接矩形の中心(マップの中央)なので、
-/// 最初の駅 (2, 9) は表示域の外になり、#2 の案内は表示域の縁の矢印から始まる。
+/// 始めの 3 駅が表示域(20 × 9 マス)に入りきらない駅の位置。始めのカメラは 1 つ目の駅 (2, 9) を見せ、
+/// カーソルを(駅に乗らずに)右へ動かすと、#2 の案内の駅は表示域の外になって縁の矢印で示す。
 fn far_plan() -> Vec<GridPos> {
     let mut v = vec![
         GridPos { x: 2, y: 9 },
@@ -341,13 +341,15 @@ fn screens() -> Vec<(&'static str, DrawList)> {
         h.frames(20);
         h.press(Action::Confirm);
     }
-    shot("explain_far", &h);
     h.frames(40);
     shot("explain_mark", &h);
     h.frames(20);
     h.press(Action::Confirm);
     h.frames(40);
     shot("guide", &h);
+    h.move_cursor_to(GridPos { x: 36, y: 12 });
+    h.frames(40);
+    shot("guide_far", &h);
 
     let mut h = with_line();
     shot("line", &h);
@@ -426,9 +428,9 @@ const EXPECT: [(&str, &str, bool); 29] = [
     ("title_new_game", "'続'", true),
     ("title_new_game_confirm", "'遊'", true),
     ("explain", "'次'", true),
-    ("explain_far", "ico_tri_left ", true),
     ("explain_mark", "ui_sel_tl ", true),
     ("guide", "ico_guide ", true),
+    ("guide_far", "ico_tri_left ", true),
     ("map_far", "ui_map_cursor ", true),
     ("map_far", "'待'", false),
     ("line", "'路'", true),
@@ -451,6 +453,59 @@ const EXPECT: [(&str, &str, bool); 29] = [
     ("line_price_refused", "'選'", false),
 ];
 
+/// 9 分割の部品の位置(`tl` などの接尾辞)。9 分割でなければ `None`。
+fn nine_part(name: &str) -> Option<&str> {
+    ["ui_win_", "ui_popup_", "ui_frame_", "ui_sel_"]
+        .iter()
+        .find_map(|p| name.strip_prefix(p))
+}
+
+/// 描画の解像度で、スプライトとグリフは拡大して描かない(アトラスの画素 1 つ = 描画の画素 1 つ以下)。
+/// 9 分割の辺と中は伸ばす向きの 1 方向だけ。駅の出現の演出は縮めて描く。グリフは等倍。
+#[test]
+fn ui_screens_draw_sprites_without_magnification() {
+    let assets = tm_assets::bundle().expect("bundle");
+    let k = u64::from(tm_platform_api::RENDER_SCALE);
+    let mut checked = 0;
+    for (name, list) in screens() {
+        for cmd in &list.cmds {
+            let DrawCmd::Sprite { id, dst, .. } = *cmd else {
+                continue;
+            };
+            let (w, h) = (u64::from(dst.w) * k, u64::from(dst.h) * k);
+            let src = assets.source_rect(id, w, h).expect("スプライト");
+            let (sw, sh) = (u64::from(src.w), u64::from(src.h));
+            if usize::from(id.0) >= tm_assets::sprite::SPRITE_COUNT {
+                assert_eq!((w, h), (sw, sh), "{name}: グリフ {id:?} は等倍");
+                checked += 1;
+                continue;
+            }
+            let sprite = tm_assets::sprite::name(id);
+            match nine_part(sprite) {
+                Some("c") => continue,
+                Some("t" | "b" | "l" | "r") => {
+                    assert!(w <= sw || h <= sh, "{name}: {sprite} を縦横とも伸ばした");
+                    continue;
+                }
+                _ if sprite == "px_white" => continue,
+                _ => {}
+            }
+            assert!(
+                w <= sw && h <= sh,
+                "{name}: {sprite} を拡大した {w}×{h} > {sw}×{sh}"
+            );
+            if !sprite.starts_with("stn_body") {
+                assert!(
+                    2 * w > sw && 2 * h > sh,
+                    "{name}: {sprite} を半分以下に縮めた"
+                );
+            }
+            checked += 1;
+        }
+    }
+    assert!(checked > 1000, "{checked}");
+}
+
 #[test]
 fn ui_v_08_screens_show_what_they_name() {
     let all = screens();
@@ -463,9 +518,9 @@ fn ui_v_08_screens_show_what_they_name() {
             "title_new_game",
             "title_new_game_confirm",
             "explain",
-            "explain_far",
             "explain_mark",
             "guide",
+            "guide_far",
             "line",
             "info_station",
             "info_track",
@@ -541,7 +596,7 @@ fn ui_v_08_ui_screens_match_soft_raster() {
     }
 }
 
-/// `TM_SDL_DUMP_DIR` があれば、SDL の画素を `TM_SDL_DUMP_SCALE`(既定 3)倍の PNG にして書く(目で見る用)。
+/// `TM_SDL_DUMP_DIR` があれば、SDL の画素(描画の解像度 1920×1080)を `TM_SDL_DUMP_SCALE`(既定 1)倍の PNG にして書く(目で見る用)。
 fn dump(name: &str, rgba: &[u8]) {
     let Ok(dir) = std::env::var("TM_SDL_DUMP_DIR") else {
         return;
@@ -549,8 +604,8 @@ fn dump(name: &str, rgba: &[u8]) {
     let scale: usize = std::env::var("TM_SDL_DUMP_SCALE")
         .ok()
         .and_then(|v| v.parse().ok())
-        .unwrap_or(3);
-    let (w, h) = (640, rgba.len() / 4 / 640);
+        .unwrap_or(1);
+    let (w, h) = (1920, rgba.len() / 4 / 1920);
     let mut big = Vec::with_capacity(rgba.len() * scale * scale);
     for row in rgba.chunks(w * 4) {
         let line: Vec<u8> = row

@@ -143,6 +143,198 @@ fn pieces_are_in_drawing_order() {
     assert_eq!(ps.len(), 2 * 3 + 2 * 5);
 }
 
+const VARIANTS: [BandVariant; 5] = [
+    BandVariant::Center,
+    BandVariant::Lane0,
+    BandVariant::Lane2,
+    BandVariant::Lane0Conv,
+    BandVariant::Lane2Conv,
+];
+
+fn center(t: GridPos) -> (i32, i32) {
+    let (x, y) = tile_layer(t);
+    (x + TILE / 2, y + TILE / 2)
+}
+
+fn same_lane(v: BandVariant) -> &'static [BandVariant] {
+    match v {
+        BandVariant::Center => &[BandVariant::Center],
+        BandVariant::Lane0 | BandVariant::Lane0Conv => {
+            &[BandVariant::Lane0, BandVariant::Lane0Conv]
+        }
+        BandVariant::Lane2 | BandVariant::Lane2Conv => {
+            &[BandVariant::Lane2, BandVariant::Lane2Conv]
+        }
+    }
+}
+
+/// 8 方向の半区間は中心から始まり、縦横は辺の中点、斜めは角で終わる。1 本の帯は線路と同じ線。
+#[test]
+fn half_segments_run_from_the_center_to_the_edge_midpoint_or_the_corner() {
+    let t = g(5, 3);
+    let (lx, ly) = tile_layer(t);
+    for d in Dir8::ALL {
+        let s = half_seg(t, d, None);
+        assert_eq!(s.from, center(t), "{d:?}");
+        let (dx, dy) = d.delta();
+        assert_eq!(
+            s.to,
+            (lx + (1 + dx) * TILE / 2, ly + (1 + dy) * TILE / 2),
+            "{d:?}"
+        );
+        let on_x = s.to.0 == lx || s.to.0 == lx + TILE;
+        let on_y = s.to.1 == ly || s.to.1 == ly + TILE;
+        assert_eq!((on_x, on_y), (dx != 0, dy != 0), "{d:?} は辺の中点か角");
+        assert_eq!(half_seg(t, d, Some(BandVariant::Center)), s, "{d:?}");
+    }
+}
+
+/// 隣のマスの逆向きの半区間とは、同じレーンなら(平行・集めるによらず)境目の同じ点でつながる。
+#[test]
+fn neighbors_meet_at_the_same_point_on_the_boundary() {
+    let t = g(5, 3);
+    for d in Dir8::ALL {
+        let (dx, dy) = d.delta();
+        let n = g(5 + dx, 3 + dy);
+        assert_eq!(half_seg(t, d, None).to, half_seg(n, d.opposite(), None).to);
+        for v in VARIANTS {
+            for &w in same_lane(v) {
+                assert_eq!(
+                    half_seg(t, d, Some(v)).to,
+                    half_seg(n, d.opposite(), Some(w)).to,
+                    "{d:?} {v:?} / {w:?}"
+                );
+            }
+        }
+    }
+}
+
+/// 曲がり・T 字・8 方向: 線路の半区間と、1 本の帯・集める版の帯はどれも中心の 1 点から出る(中心で折れる)。
+/// 平行の版はずれた点でつながり、向かいの半区間と 1 本のまっすぐな線になる。
+#[test]
+fn bends_and_junctions_fold_at_the_center() {
+    let t = g(5, 3);
+    let c = center(t);
+    for d in Dir8::ALL {
+        assert_eq!(half_seg(t, d, None).from, c);
+        for v in [
+            BandVariant::Center,
+            BandVariant::Lane0Conv,
+            BandVariant::Lane2Conv,
+        ] {
+            assert_eq!(half_seg(t, d, Some(v)).from, c, "{d:?} {v:?}");
+        }
+        for v in [BandVariant::Lane0, BandVariant::Lane2] {
+            let (p, q) = (half_seg(t, d, Some(v)), half_seg(t, d.opposite(), Some(v)));
+            assert_eq!(p.from, q.from, "{d:?} {v:?}");
+            assert_ne!(p.from, c);
+            assert_eq!(
+                (p.to.0 - p.from.0, p.to.1 - p.from.1),
+                (q.from.0 - q.to.0, q.from.1 - q.to.1),
+                "{d:?} {v:?} はまっすぐ"
+            );
+        }
+    }
+}
+
+/// 2 路線が同じマスを通り、分かれ、交わる場面: どの帯の半区間も、隣のマスの同じ路線の半区間と境目の同じ点でつながり、
+/// 路線はそのマスの中を 1 点(中心、まっすぐ同じレーンなら中心からずれた点)で通る。曲がるマスでは中心。
+#[test]
+fn shared_forking_and_crossing_lines_join_at_boundaries_and_the_center() {
+    let a = row(3, 1..=6);
+    let b = vec![g(1, 3), g(2, 3), g(3, 3), g(4, 4), g(4, 5), g(4, 6)];
+    let c = vec![g(3, 0), g(3, 1), g(3, 2), g(3, 3), g(3, 4), g(2, 5)];
+    let paths = [
+        (LineId(0), a.as_slice()),
+        (LineId(1), b.as_slice()),
+        (LineId(2), c.as_slice()),
+    ];
+    let ps = band_pieces(&paths, &EdgeLanes::build(&paths));
+    let find = |t: GridPos, d: Dir8, l: LineId| {
+        ps.iter()
+            .find(|p| p.tile == t && p.dir == d && p.line == l)
+            .unwrap_or_else(|| panic!("{t:?} {d:?} {l:?} がない"))
+    };
+    let mut shifted_ends = 0;
+    for p in &ps {
+        let s = half_seg(p.tile, p.dir, Some(p.variant));
+        let (dx, dy) = p.dir.delta();
+        let n = g(p.tile.x + dx, p.tile.y + dy);
+        let q = find(n, p.dir.opposite(), p.line);
+        assert_eq!(
+            s.to,
+            half_seg(n, q.dir, Some(q.variant)).to,
+            "{p:?} / {q:?}"
+        );
+        shifted_ends += usize::from(s.to != half_seg(p.tile, p.dir, None).to);
+        let mine: Vec<&BandPiece> = ps
+            .iter()
+            .filter(|o| o.tile == p.tile && o.line == p.line)
+            .collect();
+        for o in &mine {
+            assert_eq!(
+                half_seg(o.tile, o.dir, Some(o.variant)).from,
+                s.from,
+                "{p:?}"
+            );
+        }
+        if mine.len() == 2 && mine[0].dir != mine[1].dir.opposite() {
+            assert_eq!(s.from, center(p.tile), "曲がるマス {p:?}");
+        }
+    }
+    assert!(shifted_ends > 0, "共有の区間はレーンをずらす");
+    let fork = g(3, 3);
+    let at_fork: Vec<&BandPiece> = ps.iter().filter(|p| p.tile == fork).collect();
+    assert_eq!(at_fork.len(), 6, "3 路線 × 2");
+    for p in at_fork {
+        assert_eq!(
+            half_seg(p.tile, p.dir, Some(p.variant)).from,
+            center(fork),
+            "{p:?}"
+        );
+    }
+}
+
+/// 半区間の絵は、線分をペンの太さでなぞった矩形にぴったり描ける(基準点から 2 倍で置いた位置と同じ)。
+/// 絵の線が中心と辺の中点(角)をペンの半分より先へ越えないことの確認。
+#[test]
+fn track_sprites_fit_their_half_segments() {
+    let t = g(5, 3);
+    let (lx, ly) = tile_layer(t);
+    let dst = |c: DrawCmd| match c {
+        DrawCmd::Sprite { dst, .. } => dst,
+        other => panic!("{other:?}"),
+    };
+    let white = palette::WHITE;
+    for d in Dir8::ALL {
+        for (id, w) in [
+            (sprite::TRK_RAIL_O[d as usize], RAIL_OUTLINE_W),
+            (sprite::TRK_RAIL_F[d as usize], RAIL_W),
+        ] {
+            assert_eq!(
+                dst(half_cmd(id, half_seg(t, d, None), w, white)),
+                dst(map_sprite_cmd(id, lx, ly, white)),
+                "{}",
+                sprite::name(id)
+            );
+        }
+        for v in VARIANTS {
+            for (table, w) in [
+                (&sprite::TRK_BAND_O, BAND_OUTLINE_W),
+                (&sprite::TRK_BAND_F, BAND_W),
+            ] {
+                let id = table[d as usize][v as usize];
+                assert_eq!(
+                    dst(half_cmd(id, half_seg(t, d, Some(v)), w, white)),
+                    dst(map_sprite_cmd(id, lx, ly, white)),
+                    "{}",
+                    sprite::name(id)
+                );
+            }
+        }
+    }
+}
+
 #[test]
 fn line_path_joins_segments_once() {
     let seg = |from: u32, to: u32, tiles: Vec<GridPos>| TrackSegment {
@@ -267,13 +459,50 @@ fn dots_follow_the_share_of_the_station_capacity() {
     }
     assert_eq!(waiting_dots(11, 10), Some(sprite::PAX_DOTS[10]));
     assert_eq!(waiting_dots(1, 1 << 50), Some(sprite::PAX_DOTS[1]));
-    assert_eq!(waiting_dots(3 << 47, 1 << 50), Some(sprite::PAX_DOTS[4]));
+    assert_eq!(waiting_dots(3 << 47, 1 << 50), Some(sprite::PAX_DOTS[3]));
     assert_eq!(
         waiting_dots((1 << 50) - 1, 1 << 50),
-        Some(sprite::PAX_DOTS[10])
+        Some(sprite::PAX_DOTS[9]),
+        "満員の手前は 9 個"
     );
+    assert_eq!(waiting_dots(1 << 50, 1 << 50), Some(sprite::PAX_DOTS[10]));
     assert_eq!(waiting_dots(u64::MAX, 1 << 50), Some(sprite::PAX_DOTS[10]));
     assert_eq!(waiting_dots(5, 0), Some(sprite::PAX_DOTS[10]));
+    assert_eq!(waiting_dots(19, 20), Some(sprite::PAX_DOTS[9]));
+    assert_eq!(waiting_dots(1, 20), Some(sprite::PAX_DOTS[1]));
+}
+
+/// 画面の点は駅で待てる人数(S3)に対する割合で描く(M8)。定員が 10 人より多い駅は、満員でなければ 10 個にならない。
+#[test]
+fn drawn_dots_use_the_station_capacity() {
+    use tm_core::{BuyMode, Command, ParamKey, UpgradeScope};
+    let mut h = crate::tests::cheap_with_company(2);
+    let cmd = Command::LevelUp {
+        param: ParamKey::S3StationCap,
+        scope: UpgradeScope::AllStations,
+        mode: BuyMode::Max,
+    };
+    h.game.as_mut().expect("ゲーム").enqueue(cmd);
+    let mut checked = false;
+    for _ in 0..600 {
+        h.frames(1);
+        let v = h.game.as_ref().expect("ゲーム").view();
+        let Some(st) = v
+            .stations()
+            .filter(|s| s.id.0 < 3)
+            .find(|s| s.capacity.0 > 10 && s.waiting.0 >= 10 && s.waiting.0 < s.capacity.0)
+        else {
+            continue;
+        };
+        let want = waiting_dots(st.waiting.0, st.capacity.0).expect("待っている人がいる");
+        assert_ne!(want, sprite::PAX_DOTS[10]);
+        let name = tm_assets::sprite::name(want);
+        let text = h.draw_text();
+        assert!(text.contains(&format!("Sprite {name} ")), "{name} がない");
+        checked = true;
+        break;
+    }
+    assert!(checked, "定員より少ない 10 人以上の駅ができない");
 }
 
 #[test]

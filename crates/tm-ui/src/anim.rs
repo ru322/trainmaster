@@ -54,8 +54,8 @@ const SPAWN_TO_PX: u64 = 14 * MAP_SCALE as u64;
 const SPARKLE_AT: i32 = 9 * MAP_SCALE;
 const LEVELUP_MS: u64 = 600;
 const FX_MAX: usize = 32;
-/// 対象の矢印の上限(駅の最大数)。表示域の中に描くものだけを数える。
-const LEVELUP_TARGETS: usize = 19;
+/// 対象の矢印の上限(駅の最大数。バランスの表と同じことをテストで確かめる)。表示域の中に描くものだけを数える。
+pub(crate) const LEVELUP_TARGETS: usize = 27;
 
 fn ms(us: u64) -> u64 {
     us / 1000
@@ -617,7 +617,7 @@ impl Anims {
                     continue;
                 }
                 if x0 == x1 || y0 == y1 {
-                    let half = 2 * MAP_SCALE;
+                    let half = crate::draw::map::RAIL_W / 2;
                     let (l, t) = (x0.min(x1) - half, y0.min(y1) - half);
                     b.fill(
                         rect(
@@ -629,15 +629,9 @@ impl Anims {
                         c,
                     );
                 } else {
-                    for d in -(3 * MAP_SCALE) / 2..(3 * MAP_SCALE + 1) / 2 {
-                        b.push(tm_platform_api::DrawCmd::Line {
-                            x0: x0 + d,
-                            y0,
-                            x1: x1 + d,
-                            y1,
-                            color: c,
-                        });
-                    }
+                    let w = crate::draw::map::RAIL_W * 3 / 4;
+                    let (lo, hi) = (-w / 2, (w + 1) / 2);
+                    b.slanted_band((x0, y0), (x1, y1), lo, hi, c);
                 }
             }
         }

@@ -4,8 +4,12 @@ mod common;
 
 use common::{bundle, leak, rect};
 use tm_platform_api::{
-    AssetBundle, AtlasImage, Color, DrawCmd, DrawList, LayerId, Rect, SoftRaster, SpriteId,
+    AssetBundle, AtlasImage, Color, DrawCmd, DrawList, LayerId, RENDER_HEIGHT, RENDER_SCALE,
+    RENDER_WIDTH, Rect, SoftRaster, SpriteAlt, SpriteId,
 };
+
+const K: usize = RENDER_SCALE as usize;
+const NW: usize = RENDER_WIDTH as usize;
 
 const BG: Color = rgba(10, 20, 30, 255);
 const STRIP: [[u8; 4]; 5] = [
@@ -55,9 +59,32 @@ fn draw(cmds: Vec<DrawCmd>) -> SoftRaster {
     s
 }
 
-fn px(s: &SoftRaster, x: usize, y: usize) -> [u8; 4] {
-    let i = (y * 640 + x) * 4;
+/// 描画の画素 `(x, y)`。
+fn native(s: &SoftRaster, x: usize, y: usize) -> [u8; 4] {
+    let i = (y * NW + x) * 4;
     s.pixels()[i..i + 4].try_into().unwrap()
+}
+
+/// 論理の画素 `(x, y)` の色。論理の画素の `K × K` の塊がそろっていることも確かめる。
+fn px(s: &SoftRaster, x: usize, y: usize) -> [u8; 4] {
+    let c = native(s, x * K, y * K);
+    for j in 0..K {
+        for i in 0..K {
+            assert_eq!(
+                native(s, x * K + i, y * K + j),
+                c,
+                "論理 ({x}, {y}) の塊がそろわない"
+            );
+        }
+    }
+    c
+}
+
+/// `pred` に合う描画の画素の数を、論理の画素の数にする。
+fn lit(s: &SoftRaster, pred: impl Fn(&[u8]) -> bool) -> usize {
+    let n = s.pixels().chunks(4).filter(|p| pred(p)).count();
+    assert_eq!(n % (K * K), 0);
+    n / (K * K)
 }
 
 fn fill(x: i32, y: i32, w: u32, h: u32, color: Color) -> DrawCmd {
@@ -99,7 +126,8 @@ fn is(s: &SoftRaster, x: usize, y: usize, c: Color) -> bool {
 #[test]
 fn starts_opaque_black_and_clear_replaces_rgba() {
     let s = SoftRaster::new();
-    assert_eq!(s.pixels().len(), 640 * 360 * 4);
+    assert_eq!(s.pixels().len(), 1920 * 1080 * 4);
+    assert_eq!((RENDER_WIDTH, RENDER_HEIGHT), (1920, 1080));
     assert!(s.pixels().chunks(4).all(|p| p == [0, 0, 0, 255]));
     let s = draw(vec![DrawCmd::Clear(rgba(1, 2, 3, 4))]);
     assert!(s.pixels().chunks(4).all(|p| p == [1, 2, 3, 4]));
@@ -145,8 +173,7 @@ fn fill_is_clipped_and_empty_rects_draw_nothing() {
     assert!(is(&s, 0, 0, red) && is(&s, 1, 1, red) && !is(&s, 2, 2, red));
     assert!(is(&s, 639, 359, red) && is(&s, 636, 356, red));
     assert!(!is(&s, 100, 100, red) && !is(&s, 110, 100, red));
-    let lit = s.pixels().chunks(4).filter(|p| p[0] == 255).count();
-    assert_eq!(lit, 4 + 16 + 640 - 2);
+    assert_eq!(lit(&s, |p| p[0] == 255), 4 + 16 + 640 - 2);
 }
 
 #[test]
@@ -169,8 +196,8 @@ fn lines_include_both_ends_in_eight_directions() {
             y1: 100 + dy,
             color: green,
         }]);
-        let lit = s.pixels().chunks(4).filter(|p| p[1] == 255).count() as i32;
-        assert_eq!(lit, dx.abs().max(dy.abs()) + 1, "{dx},{dy}");
+        let n = lit(&s, |p| p[1] == 255) as i32;
+        assert_eq!(n, dx.abs().max(dy.abs()) + 1, "{dx},{dy}");
         assert!(is(&s, 100, 100, green), "{dx},{dy}");
         let (ex, ey) = ((100 + dx) as usize, (100 + dy) as usize);
         assert!(is(&s, ex, ey, green), "{dx},{dy}");
@@ -194,31 +221,122 @@ fn sprite_is_scaled_nearest_from_pixel_centers() {
         .map(|w| sprite(1, r(0, w as i32 * 2, w, 1), white))
         .collect();
     let s = draw(cmds);
-    let want: [&[usize]; 13] = [
-        &[2],
-        &[1, 3],
-        &[0, 2, 4],
-        &[0, 1, 3, 4],
-        &[0, 1, 2, 3, 4],
-        &[0, 1, 2, 2, 3, 4],
-        &[0, 1, 1, 2, 3, 3, 4],
-        &[0, 0, 1, 2, 2, 3, 4, 4],
-        &[0, 0, 1, 1, 2, 3, 3, 4, 4],
-        &[0, 0, 1, 1, 2, 2, 3, 3, 4, 4],
-        &[0, 0, 1, 1, 2, 2, 2, 3, 3, 4, 4],
-        &[0, 0, 1, 1, 1, 2, 2, 3, 3, 3, 4, 4],
-        &[0, 0, 0, 1, 1, 2, 2, 2, 3, 3, 4, 4, 4],
-    ];
-    for (k, row) in want.iter().enumerate() {
-        let y = (k + 1) * 2;
-        for (x, &i) in row.iter().enumerate() {
-            assert_eq!(px(&s, x, y), STRIP[i], "w={} x={x}", k + 1);
+    for w in 1..=13usize {
+        let n = w * K;
+        let inc = (5i64 << 16) / n as i64;
+        for x in 0..n {
+            let i = ((inc / 2 + x as i64 * inc) >> 16) as usize;
+            for dy in 0..K {
+                assert_eq!(native(&s, x, w * 2 * K + dy), STRIP[i], "w={w} x={x}");
+            }
         }
-        assert_eq!(px(&s, row.len(), y), [0, 0, 0, 255]);
+        assert_eq!(native(&s, n, w * 2 * K), [0, 0, 0, 255]);
+    }
+    for (x, i) in [(0, 0), (2, 0), (3, 1), (8, 2), (14, 4)] {
+        assert_eq!(
+            native(&s, x, 5 * 2 * K),
+            STRIP[i],
+            "等倍の 5 画素は 3 画素ずつ"
+        );
+    }
+    // 画素の中心で 5 画素の帯を見たときの、手で数えた並び(描画の幅 = 論理の幅 × 3)
+    let want: [(usize, &str); 9] = [
+        (1, "024"),
+        (2, "012234"),
+        (3, "001123344"),
+        (4, "001112233344"),
+        (5, "000111222333444"),
+        (7, "000011112222233334444"),
+        (9, "000001111112222233333344444"),
+        (11, "000000011111122222223333334444444"),
+        (13, "000000001111111122222223333333344444444"),
+    ];
+    for (w, row) in want {
+        let got: String = (0..w * K)
+            .map(|x| {
+                let p = native(&s, x, w * 2 * K + 1);
+                char::from(b'0' + STRIP.iter().position(|c| *c == p).unwrap() as u8)
+            })
+            .collect();
+        assert_eq!(got, row, "論理の幅 {w}");
     }
     let s = draw(vec![sprite(1, r(0, 0, 5, 3), white)]);
     assert_eq!(px(&s, 4, 2), STRIP[4]);
     assert_eq!(px(&s, 4, 3), [0, 0, 0, 255]);
+}
+
+/// 白(0、2×2)と、論理 1px の赤(1、3×3)。1 の大きい版(6×6)は左半分が赤、右半分が緑。
+fn alt_assets(alt: tm_platform_api::SpriteRect) -> AssetBundle {
+    let (w, h) = (12usize, 6usize);
+    let mut px = vec![0u8; w * h * 4];
+    let mut put = |x: usize, y: usize, c: [u8; 4]| {
+        px[(y * w + x) * 4..(y * w + x) * 4 + 4].copy_from_slice(&c)
+    };
+    for y in 0..3 {
+        for x in 0..3 {
+            put(x, y, [255, 0, 0, 255]);
+        }
+    }
+    for y in 0..6 {
+        for x in 0..6 {
+            put(
+                3 + x,
+                y,
+                if x < 3 {
+                    [255, 0, 0, 255]
+                } else {
+                    [0, 255, 0, 255]
+                },
+            );
+        }
+    }
+    for (x, y) in [(9, 0), (10, 0), (9, 1), (10, 1)] {
+        put(x, y, [255; 4]);
+    }
+    let mut b = bundle(
+        vec![AtlasImage {
+            width: w as u32,
+            height: h as u32,
+            rgba: leak(px),
+        }],
+        vec![rect(0, 9, 0, 2, 2), rect(0, 0, 0, 3, 3)],
+        vec![],
+    );
+    b.alt = leak(vec![SpriteAlt {
+        id: SpriteId(1),
+        rect: alt,
+    }]);
+    b
+}
+
+#[test]
+fn sprite_switches_to_the_alt_only_when_magnified_in_both_axes() {
+    let white = rgba(255, 255, 255, 255);
+    assert_eq!(
+        alt_assets(rect(0, 3, 0, 3, 6)).validate(),
+        Err(tm_platform_api::AssetError::SpriteAlt {
+            sprite: SpriteId(1)
+        }),
+        "大きい版は縦横とも元より大きい"
+    );
+    let b = alt_assets(rect(0, 3, 0, 6, 6));
+    assert_eq!(b.validate(), Ok(()));
+    let mut s = SoftRaster::new();
+    let one = |dst| DrawCmd::Sprite {
+        id: SpriteId(1),
+        dst,
+        tint: white,
+    };
+    s.draw(
+        &b,
+        &DrawList {
+            cmds: vec![one(r(0, 0, 1, 1)), one(r(10, 0, 2, 2)), one(r(20, 0, 9, 1))],
+        },
+    );
+    assert_eq!(native(&s, 2, 2), [255, 0, 0, 255], "等倍は元の絵");
+    assert_eq!(native(&s, 30, 0), [255, 0, 0, 255]);
+    assert_eq!(native(&s, 33, 5), [0, 255, 0, 255], "2 倍は大きい版");
+    assert_eq!(native(&s, 86, 2), [255, 0, 0, 255], "縦が等倍なら元の絵");
 }
 
 #[test]
@@ -236,8 +354,8 @@ fn sprite_tint_and_alpha_like_sdl_software() {
     assert_eq!(px(&s, 0, 10), [28, 27, 31, 255]);
     assert_eq!(px(&s, 4, 10), [104, 59, 39, 255]);
     assert_eq!(px(&s, 8, 10), [104, 59, 39, 255]);
-    assert_eq!(px(&s, 0, 20), [19, 17, 25, 255]);
-    assert_eq!(px(&s, 4, 20), [59, 5, 9, 255]);
+    assert_eq!(native(&s, 0, 20 * K), [19, 17, 25, 255], "5 画素の帯の左端");
+    assert_eq!(native(&s, 4 * K, 20 * K), [59, 5, 9, 255]);
     assert_eq!(px(&s, 41, 31), [43, 59, 14, 255]);
     assert_eq!(px(&s, 50, 30), [10, 20, 30, 255]);
     assert_eq!(px(&s, 60, 30), [10, 20, 30, 255]);
@@ -374,7 +492,7 @@ fn draw_is_deterministic() {
     for &v in a.pixels() {
         h = (h ^ u64::from(v)).wrapping_mul(0x0100_0000_01b3);
     }
-    assert_eq!(h, 15_715_361_307_091_074_346);
+    assert_eq!(h, 14_117_076_021_316_968_440);
 }
 
 #[test]
@@ -402,8 +520,7 @@ fn far_coordinates_do_not_overflow_or_walk_the_whole_line() {
         DrawCmd::EndCachedLayer,
         draw_layer(0),
     ]);
-    let lit = s.pixels().chunks(4).filter(|p| p[0] == 255).count();
-    assert_eq!(lit, 640 + 360 - 1);
+    assert_eq!(lit(&s, |p| p[0] == 255), 640 + 360 - 1);
     assert!(is(&s, 639, 10, red) && is(&s, 20, 359, red));
     assert!(!s.pixels().chunks(4).any(|p| p[2] == 255));
 }
@@ -443,10 +560,45 @@ fn line_pixels_match_the_stepping_bresenham() {
             }
             want.push((x, y));
         }
-        let lit = s.pixels().chunks(4).filter(|p| p[0] == 255).count();
-        assert_eq!(lit, want.len(), "{dx},{dy}");
+        assert_eq!(lit(&s, |p| p[0] == 255), want.len(), "{dx},{dy}");
         for (x, y) in want {
             assert!(is(&s, x as usize, y as usize, white), "{dx},{dy} {x},{y}");
         }
     }
+}
+
+#[test]
+fn quad_uses_fine_coordinates_and_moves_with_the_layer() {
+    let red = rgba(255, 0, 0, 255);
+    let quad = DrawCmd::Quad {
+        pts: [(0, 0), (6, 0), (36, 30), (30, 30)],
+        color: red,
+    };
+    let s = draw(vec![quad]);
+    assert_eq!(s.pixels().chunks(4).filter(|p| p[0] == 255).count(), 30 * 6);
+    assert_eq!(native(&s, 0, 0), [255, 0, 0, 255]);
+    assert_eq!(native(&s, 6, 0), [0, 0, 0, 255]);
+    assert_eq!(native(&s, 28, 29), [0, 0, 0, 255]);
+    assert_eq!(
+        native(&s, 29, 29),
+        [255, 0, 0, 255],
+        "中心が左の辺の上なら塗る"
+    );
+    assert_eq!(native(&s, 35, 29), [0, 0, 0, 255], "右の辺の上は塗らない");
+    let s = draw(vec![
+        DrawCmd::Clear(BG),
+        begin(0, 100, 50, 10, 4),
+        DrawCmd::Clear(rgba(100, 100, 100, 255)),
+        quad,
+        DrawCmd::EndCachedLayer,
+        draw_layer(0),
+    ]);
+    assert_eq!(native(&s, 300, 150), [255, 0, 0, 255], "層の位置へ動く");
+    assert_eq!(native(&s, 300 + 11, 150 + 11), [255, 0, 0, 255]);
+    assert_eq!(native(&s, 300 + 23, 150 + 11), [100, 100, 100, 255]);
+    assert_eq!(
+        native(&s, 300 + 12, 150 + 12),
+        [10, 20, 30, 255],
+        "層の高さ 4 = 12 画素で切る"
+    );
 }

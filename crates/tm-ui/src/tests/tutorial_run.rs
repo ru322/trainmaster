@@ -48,6 +48,17 @@ impl Kid {
     fn step(&mut self) {
         self.paused_frames += u64::from(self.h.ui.is_paused(self.h.tutorial.as_ref()));
         self.h.frames(1);
+        let p = play(&self.h);
+        if let Some(s) = p.explain.shown.filter(|s| s.boxed && !s.under_menu) {
+            let c = crate::layout::tile_ring(p.cursor, p.camera.pos);
+            assert!(
+                !crate::anim::overlaps(s.area, c),
+                "説明の箱がカーソルを隠す: #{} {} ページ目、箱 {:?}、カーソル {c:?}",
+                s.directive.stage.0,
+                s.directive.page + 1,
+                s.area
+            );
+        }
     }
 
     fn wait(&mut self, ms: u64) {

@@ -13,10 +13,12 @@ mod input;
 mod platform;
 mod time;
 
-pub use assets::{AssetBundle, AssetError, AtlasImage, SpriteRect};
+pub use assets::{AssetBundle, AssetError, AtlasImage, SpriteAlt, SpriteRect};
 pub use audio::{AudioBus, AudioCmd, SoundData, SoundId, SoundKind};
-pub use draw::{DrawCmd, DrawList, LayerId, SpriteId};
-pub use geom::{Color, LOGICAL_HEIGHT, LOGICAL_WIDTH, Rect};
+pub use draw::{DrawCmd, DrawList, LayerId, QUAD_COORD_LIMIT, SpriteId, quad_rows};
+pub use geom::{
+    Color, LOGICAL_HEIGHT, LOGICAL_WIDTH, RENDER_HEIGHT, RENDER_SCALE, RENDER_WIDTH, Rect, SUBPX,
+};
 #[cfg(feature = "headless")]
 pub use headless::{
     AssetSummary, AudioViolation, HeadlessClock, HeadlessConfig, HeadlessPlatform, RecordPolicy,

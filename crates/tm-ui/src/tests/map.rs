@@ -79,6 +79,211 @@ pub(super) fn shared_lines() -> UiHarness {
     h
 }
 
+/// 曲がり角の形を集めた場面の駅(添字 = `StationId`)。最初の 11 駅が左上の 20 × 11 マスに入る。
+pub(super) fn shapes_plan() -> Vec<tm_core::GridPos> {
+    let g = |x, y| tm_core::GridPos { x, y };
+    let mut v = vec![
+        g(1, 2),
+        g(6, 4),
+        g(6, 8),
+        g(17, 2),
+        g(14, 1),
+        g(8, 7),
+        g(10, 9),
+        g(12, 5),
+        g(15, 6),
+        g(19, 8),
+        g(1, 9),
+    ];
+    let n = tm_core::BalanceTable::builtin().max_stations() as i32;
+    v.extend((0..n - v.len() as i32).map(|j| g(22 + 3 * (j % 6), 2 + 3 * (j / 6))));
+    v
+}
+
+/// 曲がり角の形(45° の折れ、直線からの分かれ、交差、S 字、駅での直角と 135°、2 路線の共有)を集めた場面。
+pub(super) fn track_shapes() -> UiHarness {
+    use tm_core::{Bend::*, Command, StationId};
+    let mut h = UiHarness::from_game(
+        super::cheap_game_on(shapes_plan(), |s| s.company.gauge_num = 1),
+        false,
+    );
+    h.game.as_mut().unwrap().enqueue(create_line(&[0, 1, 2]));
+    h.frames(2);
+    for _ in 0..2000 {
+        if h.game.as_ref().unwrap().view().stations().len() >= 11 {
+            break;
+        }
+        super::buy_all(&mut h);
+        h.frames(2);
+    }
+    let lines: [(&[u32], &[tm_core::Bend]); 5] = [
+        (&[0, 3], &[StraightFirst]),
+        (&[4, 5, 6], &[DiagonalFirst, StraightFirst]),
+        (&[7, 8, 9], &[StraightFirst, DiagonalFirst]),
+        (&[4, 7], &[StraightFirst]),
+        (&[10, 2, 6], &[StraightFirst, StraightFirst]),
+    ];
+    for (st, bends) in lines {
+        let cmd = Command::CreateLine {
+            stations: st.iter().map(|&s| StationId(s)).collect(),
+            bends: bends.to_vec(),
+        };
+        let g = h.game.as_mut().unwrap();
+        g.validate(&cmd).expect("路線を作れる");
+        g.enqueue(cmd);
+        h.frames(1);
+    }
+    for _ in 0..12_000 {
+        if h.ui.play().unwrap().map.as_ref().unwrap().hidden.is_empty() {
+            break;
+        }
+        h.frames(1);
+    }
+    assert!(h.ui.play().unwrap().map.as_ref().unwrap().hidden.is_empty());
+    h
+}
+
+/// 静的な層の 1 枚目を左上 (0, 0) に置いて描いた画素(描画の解像度。上の 360 論理行)。`keep` を満たすコマンドだけを描く。
+fn layer_pixels(h: &UiHarness, keep: impl Fn(&DrawCmd) -> bool) -> Vec<[u8; 3]> {
+    let chunk = &h.ui.play().unwrap().map.as_ref().unwrap().chunks[0];
+    let mut cmds = vec![DrawCmd::BeginCachedLayer {
+        layer: tm_platform_api::LayerId(0),
+        revision: 1,
+        x: 0,
+        y: 0,
+        w: crate::layout::LAYER_W as u32,
+        h: crate::layout::WORLD_H as u32,
+    }];
+    cmds.extend(chunk.iter().filter(|c| keep(c)).copied());
+    cmds.push(DrawCmd::EndCachedLayer);
+    cmds.push(DrawCmd::DrawCachedLayer {
+        layer: tm_platform_api::LayerId(0),
+    });
+    super::raster::rasterize(&tm_platform_api::DrawList { cmds })
+}
+
+fn is_track(c: &DrawCmd) -> bool {
+    !matches!(c, DrawCmd::Sprite { id, .. } if !sprite::name(*id).starts_with("trk_"))
+}
+
+#[test]
+#[ignore = "目で確かめるための画像を書く。TM_UI_DUMP_DIR がなければ何もしない"]
+fn dump_track_shapes() {
+    let Ok(dir) = std::env::var("TM_UI_DUMP_DIR").map(std::path::PathBuf::from) else {
+        return;
+    };
+    let h = track_shapes();
+    for (name, px) in [
+        ("track_shapes_layer", layer_pixels(&h, |_| true)),
+        ("track_shapes_bare", layer_pixels(&h, is_track)),
+    ] {
+        super::raster::write_ppm(&dir.join(format!("{name}.ppm")), &px);
+    }
+    super::raster::write_ppm(
+        &dir.join("track_shapes.ppm"),
+        &super::raster::rasterize(h.draw_list()),
+    );
+}
+
+/// 画素 (x, y) の中心が、線分を四角いペン(半分の幅 `h`)でなぞった形に入るか。
+fn in_pen(s: crate::draw::map::HalfSeg, h: i32, x: i32, y: i32) -> bool {
+    let (mut lo, mut hi) = (0.0f64, 1.0f64);
+    for (q, a, b) in [
+        (2 * x + 1, 2 * s.from.0, 2 * s.to.0),
+        (2 * y + 1, 2 * s.from.1, 2 * s.to.1),
+    ] {
+        let (q, a, u, h) = (
+            f64::from(q),
+            f64::from(a),
+            f64::from(b - a),
+            f64::from(2 * h),
+        );
+        if u == 0.0 {
+            if (q - a).abs() > h {
+                return false;
+            }
+        } else {
+            let (t0, t1) = ((q - h - a) / u, (q + h - a) / u);
+            lo = lo.max(t0.min(t1));
+            hi = hi.min(t0.max(t1));
+        }
+    }
+    lo <= hi
+}
+
+/// 曲がり・交差・分かれの場面で、帯がずれない(1 路線だけの辺の)線路のマスの絵は、そのマスと隣のマスの
+/// 「中心 → 辺の中点(角)」の線分を線路の縁の太さでなぞった形の中にだけある。中心の向こうへ線が突き出て X 字にならない。
+#[test]
+fn bends_and_crossings_have_no_ink_past_the_half_segments() {
+    use crate::draw::map::{EdgeLanes, RAIL_OUTLINE_W, band_pieces, half_seg};
+    use crate::draw::palette::{GROUND_A, GROUND_B};
+    use crate::layout::{SCREEN_W, TILE};
+    use tm_assets::sprite::BandVariant;
+    use tm_core::{Dir8, GridPos, LineId};
+    let h = track_shapes();
+    let view = h.game.as_ref().unwrap().view();
+    let cache = h.ui.play().unwrap().map.as_ref().unwrap();
+    let refs: Vec<(LineId, &[GridPos])> = cache
+        .paths
+        .iter()
+        .enumerate()
+        .map(|(i, p)| (LineId::from_index(i), p.as_slice()))
+        .collect();
+    let pieces = band_pieces(&refs, &EdgeLanes::build(&refs));
+    let grid = view.track_grid();
+    let (gw, gh) = (i32::from(grid.width), i32::from(grid.height));
+    let mask = |x: i32, y: i32| {
+        if (0..gw).contains(&x) && (0..gh).contains(&y) {
+            grid.masks[(y * gw + x) as usize]
+        } else {
+            tm_core::TrackMask::default()
+        }
+    };
+    let stations: Vec<GridPos> = view.stations().map(|s| s.pos).collect();
+    let px = super::raster::logical(&layer_pixels(&h, is_track));
+    let ground = [GROUND_A, GROUND_B].map(|c| [c.r, c.g, c.b]);
+    let (mut bends, mut crossings) = (0, 0);
+    for ty in 0..10 {
+        for tx in 0..20 {
+            let t = GridPos { x: tx, y: ty };
+            let m = mask(tx, ty);
+            let near = |p: GridPos| (p.x - tx).abs() <= 1 && (p.y - ty).abs() <= 1;
+            if m.is_empty()
+                || stations.contains(&t)
+                || pieces
+                    .iter()
+                    .any(|p| near(p.tile) && p.variant != BandVariant::Center)
+            {
+                continue;
+            }
+            let mut segs = Vec::new();
+            for (x, y) in (-1..=1).flat_map(|dy| (-1..=1).map(move |dx| (tx + dx, ty + dy))) {
+                for d in Dir8::ALL.into_iter().filter(|&d| mask(x, y).contains(d)) {
+                    segs.push(half_seg(GridPos { x, y }, d, None));
+                }
+            }
+            for y in ty * TILE..(ty + 1) * TILE {
+                for x in tx * TILE..(tx + 1) * TILE {
+                    if ground.contains(&px[(y * SCREEN_W + x) as usize]) {
+                        continue;
+                    }
+                    assert!(
+                        segs.iter().any(|&s| in_pen(s, RAIL_OUTLINE_W / 2, x, y)),
+                        "マス ({tx}, {ty}) の画素 ({x}, {y}) が線分の外"
+                    );
+                }
+            }
+            let dirs: Vec<Dir8> = Dir8::ALL.into_iter().filter(|&d| m.contains(d)).collect();
+            bends += usize::from(dirs.len() == 2 && dirs[0] != dirs[1].opposite());
+            crossings += usize::from(dirs.len() == 4);
+        }
+    }
+    assert!(
+        bends >= 4 && crossings >= 2,
+        "曲がり {bends}、交差 {crossings}"
+    );
+}
+
 #[test]
 fn static_layer_is_drawn_in_four_passes_then_stations() {
     let h = shared_lines();

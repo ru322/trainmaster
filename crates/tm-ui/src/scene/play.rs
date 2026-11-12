@@ -15,7 +15,7 @@ use super::{PlayMode, PlayScene, map_tiles, world_size};
 use crate::camera::Viewport;
 use crate::hud::{Band, decimal};
 use crate::input_ctx::{only_moves, without};
-use crate::layout::{Cam, MAP_H, MAP_Y, bottom};
+use crate::layout::{Cam, MAP_H, MAP_X, MAP_Y, bottom};
 use crate::request::AppRequest;
 use crate::settings::Settings;
 
@@ -365,9 +365,19 @@ impl PlayScene {
         self.mode = PlayMode::Build(Box::new(BuildState::start(cx)));
     }
 
-    /// カメラが見せる場面。表示域の幅はパネルで変わり、路線の確認ダイアログの帯にはカーソルを置かない。
-    /// 止める説明の箱の帯(前のフレームの位置)にも、案内の対象と一緒に見せるとき以外は置かない。
+    /// カメラが見せる場面。表示域の幅はパネルで変わり、路線の確認ダイアログと止める説明の箱(前のフレームの位置)の帯には
+    /// カーソルを置かない。
     pub(crate) fn viewport(&self, view: GameView<'_>) -> Viewport {
+        let shown = self.explain.shown.filter(|s| s.boxed && !s.under_menu);
+        self.viewport_with_box(view, shown.map(|s| s.area))
+    }
+
+    /// `viewport` の、止める説明の箱を `area` にしたもの。
+    pub(crate) fn viewport_with_box(
+        &self,
+        view: GameView<'_>,
+        area: Option<tm_platform_api::Rect>,
+    ) -> Viewport {
         let mut vp = Viewport::new(self.map_w(), MAP_H, world_size(view));
         let band = |r: tm_platform_api::Rect| (r.y - MAP_Y - BOX_GAP, bottom(r) - MAP_Y + BOX_GAP);
         if let PlayMode::Build(b) = &self.mode
@@ -375,13 +385,10 @@ impl PlayScene {
         {
             vp = vp.without_band(y0, y1);
         }
-        if let Some((y0, y1)) = self
-            .explain
-            .shown
-            .filter(|s| s.boxed && !s.under_menu)
-            .map(|s| band(s.area))
+        if let Some((x0, x1, (y0, y1))) =
+            area.map(|r| (r.x - MAP_X, r.x + r.w as i32 - MAP_X, band(r)))
         {
-            vp = vp.without_soft_band(y0, y1);
+            vp = vp.without_soft_band((x0, x1), y0, y1);
         }
         vp
     }
@@ -435,8 +442,8 @@ impl PlayScene {
     }
 }
 
-/// 確認ダイアログ・説明の箱と、カーソルを置いてよい範囲の間。
-const BOX_GAP: i32 = 4;
+/// 確認ダイアログ・説明の箱と、カーソルのマスの間(カーソルの絵はマスから `RING` はみ出す)。
+const BOX_GAP: i32 = crate::layout::RING;
 
 /// 説明の 1 ページを読んだ。
 fn acknowledge(cx: &mut Ctx<'_, '_>) {

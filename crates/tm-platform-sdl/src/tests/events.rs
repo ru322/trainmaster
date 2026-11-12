@@ -93,3 +93,127 @@ fn mapping_lines_that_pass_the_check_are_accepted_by_sdl() {
     }
     assert!(gc.add_mapping("not a mapping").is_err());
 }
+
+#[test]
+fn auto_display_is_fullscreen_except_on_headless_drivers() {
+    use crate::config::DisplayMode;
+    use crate::core::resolve_display;
+    for driver in ["kmsdrm", "KMSDRM", "x11", "wayland", "windows"] {
+        assert_eq!(
+            resolve_display(DisplayMode::Auto, driver),
+            DisplayMode::Fullscreen,
+            "{driver}"
+        );
+    }
+    for driver in ["dummy", "offscreen"] {
+        assert_eq!(
+            resolve_display(DisplayMode::Auto, driver),
+            DisplayMode::Windowed { scale: 2 },
+            "{driver}"
+        );
+    }
+    let w = DisplayMode::Windowed { scale: 3 };
+    assert_eq!(
+        resolve_display(w, "x11"),
+        w,
+        "環境変数で選んだウィンドウはそのまま"
+    );
+    assert_eq!(
+        resolve_display(DisplayMode::Fullscreen, "dummy"),
+        DisplayMode::Fullscreen
+    );
+    assert_eq!(
+        crate::config::SdlConfig::dev_default().display,
+        DisplayMode::Auto
+    );
+}
+
+/// F11 はウィンドウのある環境(KMSDRM でない)なら開発用のキーが無効でもフルスクリーンを切り替える。ゲームには渡さない。
+#[test]
+fn f11_toggles_fullscreen_without_dev_hotkeys() {
+    use sdl2::keyboard::Scancode;
+    use sdl2::video::FullscreenType;
+    let cfg = config(BatchMode::Geometry);
+    assert!(!cfg.dev_hotkeys);
+    with_platform(&cfg, test_assets(), |p| {
+        let key = |sc| Event::KeyDown {
+            timestamp: 0,
+            window_id: 0,
+            keycode: None,
+            scancode: Some(sc),
+            keymod: sdl2::keyboard::Mod::NOMOD,
+            repeat: false,
+        };
+        let mut out = Vec::new();
+        assert_eq!(
+            p.canvas_mut().window().fullscreen_state(),
+            FullscreenType::Off
+        );
+        p.handle_event(key(Scancode::F11), &mut out);
+        assert_ne!(
+            p.canvas_mut().window().fullscreen_state(),
+            FullscreenType::Off
+        );
+        p.handle_event(key(Scancode::F11), &mut out);
+        assert_eq!(
+            p.canvas_mut().window().fullscreen_state(),
+            FullscreenType::Off
+        );
+        p.handle_event(key(Scancode::F12), &mut out);
+        assert!(out.is_empty(), "F11・F12 はゲームの入力にならない: {out:?}");
+    });
+}
+
+/// 最初からフルスクリーンでも、F11 で戻るウィンドウは `window_scale` の大きさ(既定 1280×720)。
+#[test]
+fn f11_from_fullscreen_returns_to_the_window_scale() {
+    use sdl2::keyboard::Scancode;
+    use sdl2::video::FullscreenType;
+    let mut cfg = config(BatchMode::Geometry);
+    cfg.display = crate::config::DisplayMode::Fullscreen;
+    for (scale, size) in [(2, (1280, 720)), (3, (1920, 1080))] {
+        cfg.window_scale = scale;
+        with_platform(&cfg, test_assets(), |p| {
+            assert_ne!(
+                p.canvas_mut().window().fullscreen_state(),
+                FullscreenType::Off
+            );
+            p.handle_event(f11(Scancode::F11), &mut Vec::new());
+            assert_eq!(
+                p.canvas_mut().window().fullscreen_state(),
+                FullscreenType::Off
+            );
+            assert_eq!(p.canvas_mut().window().size(), size);
+        });
+    }
+}
+
+/// KMSDRM(実機)では開発用のキーが有効でも F11 を受け付けない。
+#[test]
+fn f11_is_ignored_on_kmsdrm() {
+    use sdl2::keyboard::Scancode;
+    use sdl2::video::FullscreenType;
+    let mut cfg = config(BatchMode::Geometry);
+    cfg.dev_hotkeys = true;
+    with_platform(&cfg, test_assets(), |p| {
+        p.act_as_kmsdrm();
+        let mut out = Vec::new();
+        p.handle_event(f11(Scancode::F11), &mut out);
+        assert_eq!(
+            p.canvas_mut().window().fullscreen_state(),
+            FullscreenType::Off
+        );
+        assert!(out.is_empty());
+    });
+}
+
+fn f11(sc: sdl2::keyboard::Scancode) -> Event {
+    Event::KeyDown {
+        timestamp: 0,
+        window_id: 0,
+        keycode: None,
+        scancode: Some(sc),
+        keymod: sdl2::keyboard::Mod::NOMOD,
+        repeat: false,
+    }
+}

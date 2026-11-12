@@ -33,7 +33,7 @@ pub(super) fn busiest() -> UiHarness {
 }
 
 /// `busiest` の駅をすべて表示域の中に置いた場面。
-fn busiest_on_screen() -> UiHarness {
+pub(super) fn busiest_on_screen() -> UiHarness {
     busiest_with(dense_game(), None)
 }
 
@@ -215,6 +215,54 @@ fn heaviest_scenes_fit_the_budget() {
         most = most.max(st.counted);
     }
     eprintln!("いちばん重い場面: {most} 個 / {UI_DRAW_BUDGET}");
+}
+
+/// 重い場面を、カメラを 1 マスずつマップ全体に動かして描く。描画要素(キャッシュ層は 1 個)は 1500 以下、
+/// 層の中身を含めた描画コマンドの列は 4096 以下(tm-app の soak の容量の上限)。
+#[test]
+fn heaviest_scenes_fit_the_budget_at_every_camera_position() {
+    use crate::layout::{Cam, MAP_H, MAP_W, TILE, WORLD_H, WORLD_W};
+    for (name, mut h) in [
+        (
+            "散らばる + 光 + はしを選ぶ",
+            heaviest(cheap_fast_game(), Draft::PickEnd),
+        ),
+        (
+            "散らばる + 光 + 点線の完成図",
+            heaviest(cheap_fast_game(), Draft::PickNew),
+        ),
+        (
+            "全部が見える + 光 + はしを選ぶ",
+            heaviest(dense_game(), Draft::PickEnd),
+        ),
+    ] {
+        let (mut most, mut longest, mut over_2000) = (0, 0, 0);
+        let mut n = 0;
+        for y in (0..=WORLD_H - MAP_H).step_by(TILE as usize) {
+            for x in (0..=WORLD_W - MAP_W).step_by(TILE as usize) {
+                play_mut(&mut h).camera.pos = Cam::at(x, y);
+                let (out, st) = render(&h);
+                assert!(
+                    st.counted <= UI_DRAW_BUDGET,
+                    "{name} ({x}, {y}): {} 個",
+                    st.counted
+                );
+                assert_eq!(st.dropped, [0; 4], "{name} ({x}, {y})");
+                assert!(
+                    out.cmds.len() <= 4096,
+                    "{name} ({x}, {y}): 列 {}",
+                    out.cmds.len()
+                );
+                most = most.max(st.counted);
+                longest = longest.max(out.cmds.len());
+                over_2000 += usize::from(out.cmds.len() > 2000);
+                n += 1;
+            }
+        }
+        eprintln!(
+            "{name}: カメラ {n} 位置、描画要素の最大 {most} / {UI_DRAW_BUDGET}、層の中身を含む列の最大 {longest}(2000 を超えたのは {over_2000} 位置)"
+        );
+    }
 }
 
 #[test]

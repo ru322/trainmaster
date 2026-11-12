@@ -11,7 +11,7 @@ use tm_core::{
 };
 use tm_input::{Action, ActionFrame, InputDevice};
 use tm_numeric::FormatStyle;
-use tm_platform_api::{Color, DrawCmd, MonoTime};
+use tm_platform_api::{Color, MonoTime};
 use tm_tutorial::{MenuAnchor, UiEvent};
 
 use super::play::{Ctx, show_error, step_x, step_y};
@@ -1132,8 +1132,9 @@ fn confirm_on_top(
     }
 }
 
+/// 完成図の線。太さは線路の中身(`RAIL_W`)と同じ。
 fn draw_solid(b: &mut DrawBuilder<'_>, path: &[GridPos], c: Color, cam: Cam) {
-    let half = 2 * MAP_SCALE;
+    let half = crate::draw::map::RAIL_W / 2;
     for w in path.windows(2) {
         let (x0, y0) = tile_center(w[0], cam);
         let (x1, y1) = tile_center(w[1], cam);
@@ -1148,15 +1149,7 @@ fn draw_solid(b: &mut DrawBuilder<'_>, path: &[GridPos], c: Color, cam: Cam) {
                 c,
             );
         } else {
-            for d in -half..half {
-                b.push(DrawCmd::Line {
-                    x0: x0 + d,
-                    y0,
-                    x1: x1 + d,
-                    y1,
-                    color: c,
-                });
-            }
+            b.slanted_band((x0, y0), (x1, y1), -half, half, c);
         }
     }
 }

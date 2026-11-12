@@ -1,5 +1,6 @@
 //! 定義(RON)から、名前の付いた画像の一覧を作る。
 
+use crate::art::{Art, Drawing};
 use crate::def::{AnimDef, Op, Part, Proc, Source, SpriteDef, SpriteFile};
 use crate::draw::{self, NINE_SUFFIXES};
 use crate::error::SpriteError;
@@ -12,9 +13,17 @@ use std::collections::{BTreeMap, BTreeSet};
 pub struct Sprite {
     /// 名前(フレームは `_f0` などを含む)。
     pub name: String,
-    /// 画像。
+    /// 設計の大きさ(px)。`SpriteMeta` の `w`・`h`。
+    pub size: (u32, u32),
+    /// UI が描く倍率(設計の 1px が論理の何 px か)。
+    pub scale: u32,
+    /// 絵の元。
+    pub drawing: Drawing,
+    /// アトラスに入れる画像(設計の 1px = 描画の倍率 × `scale` 画素)。
     pub image: Image,
-    /// 基準点。
+    /// 2 倍に描くときの大きい版(設計の 1px = 描画の倍率 × `scale` × 2 画素)。
+    pub alt: Option<Image>,
+    /// 基準点(設計の px)。
     pub pivot: (i32, i32),
     /// tint 前提か。
     pub tint: bool,
@@ -51,11 +60,13 @@ pub struct Resolved {
     pub anims: Vec<Anim>,
     /// 9 分割。
     pub nines: Vec<Nine>,
+    /// 線路と帯の半区間(`TrackHalf`)のマスの大きさ(設計の px)。なければ `None`。
+    pub track_tile: Option<u32>,
 }
 
 #[derive(Clone)]
 struct Rendered {
-    frames: Vec<Image>,
+    frames: Vec<Drawing>,
     pivot: (i32, i32),
     tint: bool,
     free: bool,
@@ -70,7 +81,7 @@ struct Hint {
 
 struct Ctx<'a> {
     pal: &'a Palette,
-    defs: BTreeMap<String, (u32, SpriteDef)>,
+    defs: BTreeMap<String, (u32, u32, SpriteDef)>,
     cache: BTreeMap<String, Rendered>,
     stack: Vec<String>,
 }
@@ -82,16 +93,27 @@ fn syntax(name: &str, message: &str) -> SpriteError {
     }
 }
 
-/// 定義ファイルの一覧(ファイル名順)を解決し、SG-E01〜E06 を検査する。
-pub fn resolve(files: &[(String, SpriteFile)], pal: &Palette) -> Result<Resolved, SpriteError> {
+/// 定義ファイルの一覧(ファイル名順)を解決し、SG-E01〜E06 を検査する。`render_scale` は論理 1px の描画の画素数。
+pub fn resolve(
+    files: &[(String, SpriteFile)],
+    pal: &Palette,
+    render_scale: u32,
+) -> Result<Resolved, SpriteError> {
     let mut defs = BTreeMap::new();
     for (file, f) in files {
         if f.tile < 8 || f.tile % 2 != 0 {
             return Err(syntax(file, "tile は 8 以上の偶数"));
         }
+        let scale = f.scale.unwrap_or(1);
+        if !(1..=4).contains(&scale) {
+            return Err(syntax(file, "scale は 1〜4"));
+        }
         for d in &f.sprites {
             crate::check_name(&d.name)?;
-            if defs.insert(d.name.clone(), (f.tile, d.clone())).is_some() {
+            if defs
+                .insert(d.name.clone(), (f.tile, scale, d.clone()))
+                .is_some()
+            {
                 return Err(SpriteError::Name {
                     name: d.name.clone(),
                     reason: "定義が重複している".into(),
@@ -107,9 +129,33 @@ pub fn resolve(files: &[(String, SpriteFile)], pal: &Palette) -> Result<Resolved
     };
     let names: Vec<String> = ctx.defs.keys().cloned().collect();
     let mut out = Resolved::default();
+    for (tile, _, def) in ctx.defs.values() {
+        if matches!(def.source, Some(Source::Proc(Proc::TrackHalf { .. }))) {
+            match out.track_tile {
+                Some(t) if t != *tile => {
+                    return Err(SpriteError::Shape {
+                        sprite: def.name.clone(),
+                        reason: format!("TrackHalf の tile が {t} と {tile} でそろっていない"),
+                    });
+                }
+                _ => out.track_tile = Some(*tile),
+            }
+        }
+    }
     let mut seen = BTreeSet::new();
     for name in names {
-        let def = ctx.defs[&name].1.clone();
+        let (_, file_scale, def) = ctx.defs[&name].clone();
+        let scale = def.scale.unwrap_or(file_scale);
+        if !(1..=4).contains(&scale) {
+            return Err(syntax(&name, "scale は 1〜4"));
+        }
+        let level = |d: &Drawing| -> (Image, Option<Image>) {
+            let r = render_scale * scale;
+            (
+                d.render(r),
+                def.alt.unwrap_or(false).then(|| d.render(2 * r)),
+            )
+        };
         if let (
             Some(Source::Proc(Proc::NineSlice {
                 corner,
@@ -127,13 +173,19 @@ pub fn resolve(files: &[(String, SpriteFile)], pal: &Palette) -> Result<Resolved
                 pal.by_name(outline, &name)?,
             ];
             let parts = draw::nine_slice(*corner, *border_w, colors, &name)?;
-            for (suffix, image) in NINE_SUFFIXES.iter().zip(parts) {
+            for (suffix, v) in NINE_SUFFIXES.iter().zip(parts) {
+                let drawing = Drawing::new(Art::Vector(v));
+                let (image, alt) = level(&drawing);
                 add(
                     &mut out,
                     &mut seen,
                     Sprite {
                         name: format!("{name}_{suffix}"),
+                        size: drawing.size(),
+                        scale,
+                        drawing,
                         image,
+                        alt,
                         pivot: def.pivot.unwrap_or((0, 0)),
                         tint: def.tint.unwrap_or(false),
                         free_pivot: false,
@@ -153,7 +205,11 @@ pub fn resolve(files: &[(String, SpriteFile)], pal: &Palette) -> Result<Resolved
                 &mut seen,
                 Sprite {
                     name: name.clone(),
-                    image: r.frames[0].clone(),
+                    size: r.frames[0].size(),
+                    scale,
+                    image: level(&r.frames[0]).0,
+                    alt: level(&r.frames[0]).1,
+                    drawing: r.frames[0].clone(),
                     pivot: r.pivot,
                     tint: r.tint,
                     free_pivot: r.free,
@@ -167,13 +223,18 @@ pub fn resolve(files: &[(String, SpriteFile)], pal: &Palette) -> Result<Resolved
                     frames: n,
                     anim,
                 });
-                for (i, image) in r.frames.iter().enumerate() {
+                for (i, d) in r.frames.iter().enumerate() {
+                    let (image, alt) = level(d);
                     add(
                         &mut out,
                         &mut seen,
                         Sprite {
                             name: format!("{name}_f{i}"),
-                            image: image.clone(),
+                            size: d.size(),
+                            scale,
+                            drawing: d.clone(),
+                            image,
+                            alt,
                             pivot: r.pivot,
                             tint: r.tint,
                             free_pivot: r.free,
@@ -188,7 +249,7 @@ pub fn resolve(files: &[(String, SpriteFile)], pal: &Palette) -> Result<Resolved
 
 fn add(out: &mut Resolved, seen: &mut BTreeSet<String>, sprite: Sprite) -> Result<(), SpriteError> {
     crate::check_name(&sprite.name)?;
-    let (w, h) = (sprite.image.w, sprite.image.h);
+    let (w, h) = sprite.size;
     let (px, py) = sprite.pivot;
     if !sprite.free_pivot && (px < 0 || py < 0 || px > w as i32 || py > h as i32) {
         return Err(SpriteError::Pivot {
@@ -218,7 +279,7 @@ impl Ctx<'_> {
                 reason: "Derive が循環している".into(),
             });
         }
-        let (tile, def) = self.defs[name].clone();
+        let (tile, _, def) = self.defs[name].clone();
         self.stack.push(name.to_string());
         let r = self.render_inner(tile, &def);
         self.stack.pop();
@@ -247,8 +308,8 @@ impl Ctx<'_> {
             }
             _ => return Err(syntax(name, "source と frames のどちらか一方だけを書く")),
         };
-        let (w, h) = (frames[0].w, frames[0].h);
-        if frames.iter().any(|f| (f.w, f.h) != (w, h)) {
+        let size = frames[0].size();
+        if frames.iter().any(|f| f.size() != size) {
             return Err(SpriteError::Shape {
                 sprite: name.clone(),
                 reason: "フレームの寸法がそろっていない".into(),
@@ -272,9 +333,12 @@ impl Ctx<'_> {
         tile: u32,
         name: &str,
         src: &Source,
-    ) -> Result<(Vec<Image>, Option<Hint>), SpriteError> {
+    ) -> Result<(Vec<Drawing>, Option<Hint>), SpriteError> {
         match src {
-            Source::Pixels(rows) => Ok((vec![self.pixels(name, rows)?], None)),
+            Source::Pixels(rows) => Ok((
+                vec![Drawing::new(Art::Grid(self.pixels(name, rows)?))],
+                None,
+            )),
             Source::Derive { from, op } => {
                 if !self.defs.contains_key(from) {
                     return Err(SpriteError::Derive {
@@ -283,7 +347,7 @@ impl Ctx<'_> {
                     });
                 }
                 if matches!(
-                    self.defs[from].1.source,
+                    self.defs[from].2.source,
                     Some(Source::Proc(Proc::NineSlice { .. }))
                 ) {
                     return Err(SpriteError::Derive {
@@ -292,21 +356,40 @@ impl Ctx<'_> {
                     });
                 }
                 let base = self.render_def(from)?;
-                let (w, h) = (base.frames[0].w as i32, base.frames[0].h as i32);
+                let (w, h) = base.frames[0].size();
+                let (w, h) = (w as i32, h as i32);
                 let (px, py) = base.pivot;
+                let flip = |x, y| base.frames.iter().map(|f| f.flipped(x, y)).collect();
                 let (images, pivot) = match op {
-                    Op::FlipX => (
-                        base.frames.iter().map(Image::flip_x).collect(),
-                        (w - px, py),
-                    ),
-                    Op::FlipY => (
-                        base.frames.iter().map(Image::flip_y).collect(),
-                        (px, h - py),
-                    ),
-                    Op::Rot180 => (
-                        base.frames.iter().map(Image::rot180).collect(),
-                        (w - px, h - py),
-                    ),
+                    Op::FlipX => (flip(true, false), (w - px, py)),
+                    Op::FlipY => (flip(false, true), (px, h - py)),
+                    Op::Rot180 => (flip(true, true), (w - px, h - py)),
+                    Op::Rotate(n) => {
+                        if w != h {
+                            return Err(SpriteError::Derive {
+                                sprite: name.into(),
+                                reason: "回す絵は正方形でなければならない".into(),
+                            });
+                        }
+                        let mut out = Vec::new();
+                        for f in &base.frames {
+                            out.push(f.rotated(*n).map_err(|reason| SpriteError::Derive {
+                                sprite: name.into(),
+                                reason: reason.into(),
+                            })?);
+                        }
+                        let mut p = (px, py);
+                        if n % 2 == 1 && (2 * px != w || 2 * py != h) {
+                            return Err(SpriteError::Derive {
+                                sprite: name.into(),
+                                reason: "45 度で回す絵の基準点は中心でなければならない".into(),
+                            });
+                        }
+                        for _ in 0..(n / 2) % 4 {
+                            p = (p.1, w - p.0);
+                        }
+                        (out, p)
+                    }
                     Op::Recolor(pairs) => {
                         let mut map = Vec::new();
                         for &(a, b) in pairs {
@@ -328,10 +411,10 @@ impl Ctx<'_> {
                 ))
             }
             Source::Proc(Proc::TrackHalf { dir, part }) => {
-                let (img, pivot) = draw::track_half(tile, *dir, *part, self.pal, name)?;
+                let (v, pivot) = draw::track_half(tile, *dir, *part, self.pal, name)?;
                 let tint = matches!(part, Part::BandFill { .. });
                 Ok((
-                    vec![img],
+                    vec![Drawing::new(Art::Vector(v))],
                     Some(Hint {
                         pivot,
                         tint,
@@ -339,7 +422,16 @@ impl Ctx<'_> {
                     }),
                 ))
             }
-            Source::Proc(p) => Ok((vec![self.proc(tile, name, p)?], None)),
+            Source::Proc(p) => Ok((
+                vec![Drawing::new(Art::Vector(self.proc(tile, name, p)?))],
+                None,
+            )),
+            Source::Shapes { w, h, paint } => Ok((
+                vec![Drawing::new(Art::Vector(draw::shapes(
+                    *w, *h, paint, self.pal, name,
+                )?))],
+                None,
+            )),
         }
     }
 
@@ -366,7 +458,7 @@ impl Ctx<'_> {
         Ok(img)
     }
 
-    fn proc(&self, tile: u32, name: &str, p: &Proc) -> Result<Image, SpriteError> {
+    fn proc(&self, tile: u32, name: &str, p: &Proc) -> Result<crate::vector::Vector, SpriteError> {
         match p {
             Proc::TrackHalf { .. } => Err(syntax(name, "TrackHalf は単独の source にだけ書ける")),
             Proc::CornerFrame => draw::corner_frame(tile, self.pal, name),
@@ -374,7 +466,7 @@ impl Ctx<'_> {
                 if *w == 0 || *h == 0 {
                     return Err(syntax(name, "Fill の寸法が 0"));
                 }
-                Ok(Image::filled(*w, *h, self.pal.by_name(color, name)?))
+                Ok(draw::fill(*w, *h, self.pal.by_name(color, name)?))
             }
             Proc::NineSlice { .. } => Err(syntax(name, "NineSlice は単独の source にだけ書ける")),
         }

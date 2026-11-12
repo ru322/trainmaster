@@ -4,7 +4,7 @@ pub(crate) mod map;
 pub(crate) mod palette;
 
 use tm_assets::sprite::{self, NineSlice};
-use tm_platform_api::{Color, DrawCmd, LayerId, Rect, SpriteId};
+use tm_platform_api::{Color, DrawCmd, LayerId, Rect, SUBPX, SpriteId};
 
 use crate::layout::MAP_SCALE;
 use crate::text::TextBlock;
@@ -191,6 +191,48 @@ impl<'a> DrawBuilder<'a> {
     /// 矩形を塗る。
     pub(crate) fn fill(&mut self, rect: Rect, color: Color) {
         self.push(DrawCmd::FillRect { rect, color });
+    }
+
+    /// 細かい座標(論理 1px = `SUBPX`)の凸の四角形を塗る。
+    pub(crate) fn quad(&mut self, pts: [(i32, i32); 4], color: Color) {
+        self.push(DrawCmd::Quad { pts, color });
+    }
+
+    /// 論理座標の線分 `from`→`to` を、各行で横に `[x + lo, x + hi)` だけ広げた帯にして塗る(1px の線を横に並べた形)。
+    /// 45° の線分は、その帯の縁をなめらかにした平行四辺形を細かい座標で描く(描画の画素の精度)。ほかの向きは線を並べる。
+    pub(crate) fn slanted_band(
+        &mut self,
+        from: (i32, i32),
+        to: (i32, i32),
+        lo: i32,
+        hi: i32,
+        color: Color,
+    ) {
+        let (dx, dy) = (to.0 - from.0, to.1 - from.1);
+        if dx != 0 && dx.abs() == dy.abs() {
+            let ((xa, ya), (xb, yb)) = if dy > 0 { (from, to) } else { (to, from) };
+            let (top, bottom) = if xb > xa { (xa, xb + 1) } else { (xa + 1, xb) };
+            let s = SUBPX;
+            self.quad(
+                [
+                    ((top + lo) * s, ya * s),
+                    ((top + hi) * s, ya * s),
+                    ((bottom + hi) * s, (yb + 1) * s),
+                    ((bottom + lo) * s, (yb + 1) * s),
+                ],
+                color,
+            );
+            return;
+        }
+        for d in lo..hi {
+            self.push(DrawCmd::Line {
+                x0: from.0 + d,
+                y0: from.1,
+                x1: to.0 + d,
+                y1: to.1,
+                color,
+            });
+        }
     }
 
     /// スプライトを基準の位置 `(x, y)` に置く(`dst = 基準 − pivot`)。
@@ -405,6 +447,53 @@ mod tests {
             rect(42, 70, 28, 28),
             "マップの絵は 2 倍、基準点も 2 倍"
         );
+    }
+
+    #[test]
+    fn diagonal_bands_are_one_fine_quad_with_the_footprint_of_the_lines() {
+        let mut out = Vec::new();
+        let mut b = DrawBuilder::emitting(&mut out, [0; 4]);
+        b.slanted_band((10, 20), (14, 24), -2, 2, palette::WHITE);
+        b.slanted_band((14, 24), (10, 28), -2, 2, palette::WHITE);
+        b.slanted_band((10, 20), (10, 30), -2, 2, palette::WHITE);
+        assert_eq!(
+            out[0],
+            DrawCmd::Quad {
+                pts: [(24, 60), (36, 60), (51, 75), (39, 75)],
+                color: palette::WHITE
+            }
+        );
+        assert_eq!(
+            out[1],
+            DrawCmd::Quad {
+                pts: [(39, 72), (51, 72), (36, 87), (24, 87)],
+                color: palette::WHITE
+            }
+        );
+        assert_eq!(out.len(), 2 + 4, "縦の線分は 1px の線を並べる");
+        let quad_rows = |pts: [(i32, i32); 4]| {
+            let mut rows = Vec::new();
+            tm_platform_api::quad_rows(
+                pts.map(|(x, y)| (i64::from(x), i64::from(y))),
+                (-1000, -1000, 1000, 1000),
+                |y, a, b| rows.push((y, a, b)),
+            );
+            rows
+        };
+        let DrawCmd::Quad { pts, .. } = out[0] else {
+            panic!()
+        };
+        let rows = quad_rows(pts);
+        assert_eq!(rows.len(), 15, "5 行 × 3 画素");
+        for (k, &(_, a, b)) in rows.iter().enumerate() {
+            let center = (a + b) as f64 / 2.0;
+            let lines = 3.0 * (10.0 + (k / 3) as f64) + 1.5;
+            assert!(
+                (center - lines).abs() <= 1.5,
+                "行 {k}: 線を並べた中心 {lines} と {center}"
+            );
+            assert_eq!(b - a, 12);
+        }
     }
 
     #[test]

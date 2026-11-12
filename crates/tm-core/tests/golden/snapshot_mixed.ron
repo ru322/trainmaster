@@ -1,9 +1,9 @@
 (
     format: 2,
-    rules_version: 4,
-    config_hash: 7164244485387766112,
+    rules_version: 5,
+    config_hash: 12257207011734365011,
     seed: 2,
-    state_hash: 2987304677147304843,
+    state_hash: 17124892991150075892,
     tick: 2561,
     money_bits: 4831355033193109210,
     total_earned_bits: 4758532781281116160,

@@ -31,7 +31,7 @@ struct GlyphEntry {
 pub struct FontFace {
     /// 種類。
     pub id: FontId,
-    /// 大きさ(px)。
+    /// 大きさ(論理 px。字形は描画の倍率をかけた画素で作ってある)。
     pub size_px: u8,
     /// ベースラインから行の上端まで。
     pub ascent: u8,
@@ -80,7 +80,10 @@ mod generated {
     include!(concat!(env!("CARGO_MANIFEST_DIR"), "/generated/glyphs.rs"));
 }
 
-pub use generated::{FONT_SHA256, FONT_STRIP, GLYPH_COUNT, GLYPH_RECTS};
+pub use generated::{
+    FONT_SHA256, FONT_STRIP, GLYPH_ALT, GLYPH_ALT_COUNT, GLYPH_COUNT, GLYPH_RECTS,
+    GLYPH_RENDER_SCALE,
+};
 
 impl FontFace {
     fn entry(&self, ch: char) -> Option<&'static GlyphEntry> {

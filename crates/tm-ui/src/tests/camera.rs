@@ -491,11 +491,15 @@ fn the_line_confirm_dialog_band_is_kept_free_for_the_cursor() {
     if d.y == crate::layout::BOX_TOP_Y {
         assert_eq!(
             vp.top,
-            d.y + d.h as i32 - MAP_Y + 4,
+            d.y + d.h as i32 - MAP_Y + crate::layout::RING,
             "上のダイアログの帯を除く"
         );
     } else {
-        assert_eq!(vp.bottom, d.y - MAP_Y - 4, "下のダイアログの帯を除く");
+        assert_eq!(
+            vp.bottom,
+            d.y - MAP_Y - crate::layout::RING,
+            "下のダイアログの帯を除く"
+        );
     }
     assert!(vp.soft.0 >= vp.top && vp.soft.1 <= vp.bottom);
 }
@@ -585,7 +589,7 @@ fn level_up_arrows_are_counted_among_the_stations_on_screen() {
         .collect();
     assert!(
         view.stations().filter(|s| s.connected).count() > 19,
-        "前提: 上限 19 より多い駅が路線にある"
+        "前提: 19 より多い駅が路線にある"
     );
     assert!(
         shown.iter().any(|&i| i >= 19),
@@ -601,11 +605,25 @@ fn level_up_arrows_are_counted_among_the_stations_on_screen() {
         .lines()
         .filter(|l| l.starts_with("Sprite ico_up ") && l.contains(" 20x20 "))
         .count();
+    assert_eq!(arrows, shown.len(), "見えている駅の分だけ矢印を出す");
+
+    let mut all = super::budget::busiest_on_screen();
+    let now = all.now;
+    play_mut(&mut all)
+        .anims
+        .level_up(now, tm_core::UpgradeScope::AllStations);
+    all.frames(1);
+    let arrows = all
+        .draw_text()
+        .lines()
+        .filter(|l| l.starts_with("Sprite ico_up ") && l.contains(" 20x20 "))
+        .count();
+    let max = tm_core::BalanceTable::builtin().max_stations() as usize;
     assert_eq!(
-        arrows,
-        shown.len().min(19),
-        "見えている駅の分だけ矢印を出す"
+        arrows, max,
+        "27 駅がすべて見えていれば 27 駅ぶん(上限は駅の最大数)"
     );
+    assert_eq!(crate::anim::LEVELUP_TARGETS, max);
 }
 
 /// 箱を印の反対側から動かせない(もう一方は印に重なる)ときは、カメラがカーソルを箱の上へ出す。
@@ -654,4 +672,585 @@ fn the_camera_lifts_the_cursor_above_a_box_that_cannot_move() {
     );
     assert!(!overlaps(s.area, m), "駅も隠さない");
     assert!(m.y >= MAP_Y, "駅の枠も表示域の中");
+}
+
+/// 止める説明の箱の矩形と、カーソルの絵(マスから `RING` はみ出す)が重なっているか。
+fn box_hides_cursor(h: &UiHarness) -> Option<(Rect, bool)> {
+    let p = play(h);
+    let s = p.explain.shown?;
+    if !s.boxed || s.under_menu {
+        return None;
+    }
+    let c = crate::layout::tile_ring(cursor(h), p.camera.pos);
+    Some((s.area, overlaps(s.area, c)))
+}
+
+/// 1 マスずつ下へ動かしても、説明の箱は跳ばず(戻ってこない)、カーソルも隠さない。
+/// 箱が動くのは、マップの下の端でカメラがもう下がれず、箱がカーソルを隠すときの 1 回だけ。
+#[test]
+fn the_explanation_box_stays_put_while_the_cursor_steps() {
+    use tm_tutorial::TutorialStageId;
+    for pauses in [true, false] {
+        for (x, moves) in [(12, 1), (30, 0)] {
+            let mut h = harness_with_line();
+            let mut d = fake(6, DirectiveKind::Explanation, None);
+            d.stage = TutorialStageId(6);
+            d.pauses_game = pauses;
+            play_mut(&mut h).fake_directive = Some(d);
+            h.frames(2);
+            h.move_cursor_to(GridPos { x, y: 4 });
+            wait(&mut h, 600);
+            let mut areas = vec![box_hides_cursor(&h).expect("箱").0];
+            let mut moved_at = None;
+            for step in 0..13 {
+                h.key_down(Action::MoveDown);
+                for f in 0..40 {
+                    h.frames(1);
+                    if f == 0 {
+                        h.key_up(Action::MoveDown);
+                    }
+                    let (area, hidden) = box_hides_cursor(&h).expect("箱");
+                    let what = format!("pauses={pauses} x={x} {step} 歩目の {f} フレーム");
+                    assert!(!hidden, "{what}: カーソルを隠す");
+                    if *areas.last().unwrap() != area {
+                        areas.push(area);
+                        moved_at = Some((cursor(&h).y, play(&h).camera.target.y));
+                    }
+                }
+            }
+            assert_eq!(cursor(&h).y, 17);
+            assert_eq!(
+                areas.len() - 1,
+                moves,
+                "pauses={pauses} x={x}: 箱の動き {areas:?}"
+            );
+            if let Some((_, cam_y)) = moved_at {
+                assert_eq!(cam_y, WORLD_H - MAP_H, "動くのはカメラが下の端に着いてから");
+            }
+        }
+    }
+}
+
+/// 本物のチュートリアルの #1 を読みながら下へ 3 マス動かしても、箱は跳ばない(シード 1〜30)。
+#[test]
+fn the_first_explanation_box_does_not_jump_on_any_seed() {
+    for seed in 1..=30 {
+        let mut h = UiHarness::with_seed(seed, true, tm_platform_api::MonoTime(0));
+        h.frames(30);
+        let (first, _) = box_hides_cursor(&h).expect("#1 の箱");
+        for _ in 0..3 {
+            h.key_down(Action::MoveDown);
+            h.frames(1);
+            h.key_up(Action::MoveDown);
+            for f in 0..20 {
+                let (area, hidden) = box_hides_cursor(&h).expect("箱");
+                assert_eq!(area, first, "シード {seed} {f}: 箱が跳ぶ");
+                assert!(!hidden, "シード {seed} {f}: カーソルを隠す");
+                h.frames(1);
+            }
+        }
+    }
+}
+
+/// 始めのカメラは、説明を出しても始めから動かない。始めの 1 つ目の駅はいつもすべて見える(入りきらないシードでも)。
+#[test]
+fn the_first_screen_holds_still_and_shows_the_first_station() {
+    for seed in 1..=40 {
+        for explain in [false, true] {
+            let mut h = UiHarness::with_seed(seed, explain, tm_platform_api::MonoTime(0));
+            h.frames(1);
+            let first = h
+                .game
+                .as_ref()
+                .unwrap()
+                .view()
+                .stations()
+                .next()
+                .unwrap()
+                .pos;
+            let cam = play(&h).camera.pos;
+            assert!(tile_in_view(first, cam, MAP_W), "seed {seed}: 1 つ目の駅");
+            for f in 0..120 {
+                h.frames(1);
+                assert_eq!(
+                    play(&h).camera.pos,
+                    cam,
+                    "seed {seed} explain={explain} {f}: 動く"
+                );
+            }
+        }
+    }
+}
+
+/// 最初の説明の箱が始めの駅を隠すなら、隠さずに済むときはカメラを(動きを見せずに)少しずらす。
+#[test]
+fn the_first_box_moves_the_camera_off_the_starting_stations_when_it_can() {
+    let g = |x, y| GridPos { x, y };
+    let mut p = plan();
+    p[0] = g(14, 5);
+    p[1] = g(20, 7);
+    p[2] = g(24, 10);
+    let mut h = UiHarness::with_game(p.clone(), true);
+    h.frames(1);
+    let s = play(&h).explain.shown.expect("#1");
+    assert!(s.boxed);
+    let cam = play(&h).camera.pos;
+    for &q in &p[..3] {
+        assert!(tile_in_view(q, cam, MAP_W), "{q:?} が見える");
+        assert!(
+            !overlaps(s.area, crate::layout::tile_ring(q, cam)),
+            "{q:?} を箱で隠さない: {:?}",
+            s.area
+        );
+    }
+    let (_, y) = tile_screen(p[2], Cam::at(cam.x, cam.y - 24));
+    assert!(
+        y + TILE + crate::layout::RING > s.area.y,
+        "前提: 外接矩形の中心のままなら (24, 10) が箱に隠れる"
+    );
+    h.frames(60);
+    assert_eq!(play(&h).camera.pos, cam, "置き直した後は動かない");
+}
+
+/// 「作る」の丸は、駅の上が表示域に入らなければ駅の下に描く。
+#[test]
+fn pick_dots_go_below_a_station_at_the_top_of_the_view() {
+    let mut h = UiHarness::from_game(cheap_game(), false);
+    h.frames(1);
+    h.press(Action::BuildMode);
+    h.press(Action::Confirm);
+    play_mut(&mut h).fake_directive = Some(fake(3, DirectiveKind::Guide, None));
+    h.frames(2);
+    let top = plan()[0];
+    assert!(play(&h).explain.picks().contains(&top));
+    let render = |h: &mut UiHarness, y: i32| {
+        let cam = Cam::at(play(h).camera.pos.x, y);
+        play_mut(h).camera.pos = cam;
+        let mut out = tm_platform_api::DrawList::default();
+        let view = h.game.as_ref().map(tm_core::Game::view);
+        h.ui.render(view, h.tutorial.as_ref(), &mut out);
+        (cam, crate::testing::draw_text(&out))
+    };
+    let d = TILE / 2 + 4 * crate::layout::MAP_SCALE;
+    let (cam, text) = render(&mut h, top.y * TILE);
+    let (cx, cy) = tile_center(top, cam);
+    assert_eq!(cy - TILE / 2, MAP_Y, "前提: 駅は表示域のいちばん上の行");
+    assert!(
+        text.contains(&format!("Sprite fx_dot {},{} ", cx - 8, cy + d - 8)),
+        "上に入らなければ駅の下に丸"
+    );
+    let (cam, text) = render(&mut h, top.y * TILE - 2 * TILE);
+    let (cx, cy) = tile_center(top, cam);
+    assert!(
+        text.contains(&format!("Sprite fx_dot {},{} ", cx - 8, cy - d - 8)),
+        "ふつうは駅の上に丸"
+    );
+}
+
+/// 待っている人の点は、駅で待てる人数に対する割合で数える(M10: 切り捨てで 1〜9 個、満員のときだけ 10 個。
+/// 待てる人数 40 人なら 4 人ごとに 1 個増え、5〜7 人は 1 個)。切り上げと切り捨てで数が違う人数も確かめる。
+#[test]
+fn waiting_dots_count_the_share_of_each_stations_capacity() {
+    use tm_core::{ParamKey, ValueFormula};
+    let game = super::cheap_game_on(plan(), |s| {
+        for p in &mut s.params {
+            if p.key == ParamKey::S3StationCap {
+                p.value = ValueFormula::Geometric { v0: 40, ratio: 2 };
+            }
+        }
+    });
+    let mut h = UiHarness::from_game(game, false);
+    h.game.as_mut().unwrap().enqueue(create_line(&[0, 1, 2]));
+    h.frames(2);
+    h.move_cursor_to(plan()[1]);
+    let (mut checked, mut split) = (0, Vec::new());
+    for _ in 0..120 {
+        h.frames(30);
+        let view = h.game.as_ref().unwrap().view();
+        let cam = play(&h).camera.pos;
+        let text = h.draw_text();
+        for st in view.stations() {
+            let n = st.waiting.0;
+            if n < 2 || !tile_in_view(st.pos, cam, MAP_W) {
+                continue;
+            }
+            assert_eq!(st.capacity.0, 40, "前提: 待てる人数 40");
+            let k = if n >= 40 { 10 } else { (n / 4).max(1) };
+            let (cx, cy) = tile_center(st.pos, cam);
+            let at = format!(" {},{} ", cx + 14, cy - 16);
+            let drawn: Vec<&str> = text
+                .lines()
+                .filter(|l| l.starts_with("Sprite pax_dots_") && l.contains(&at))
+                .collect();
+            assert_eq!(drawn.len(), 1, "{:?}", st.pos);
+            assert!(
+                drawn[0].starts_with(&format!("Sprite pax_dots_{k} ")),
+                "{n} 人 / 40 人は {k} 個: {}",
+                drawn[0]
+            );
+            checked += 1;
+            if n > 4 && n % 4 != 0 && n < 40 {
+                split.push(n);
+            }
+        }
+        if checked >= 3 && !split.is_empty() {
+            break;
+        }
+    }
+    assert!(checked >= 3, "2 人以上待っている駅を確かめた: {checked}");
+    assert!(
+        !split.is_empty(),
+        "切り上げなら 1 個多くなる人数(4 の倍数でない 5 人以上)を確かめた"
+    );
+}
+
+/// 新しい説明の箱は、カメラが止まる先で置き場所を決める(「印が下半分なら上」も止まる先の印で見る)。
+/// 動いている途中で新しいページが出ても、途中の位置で下半分に見える印に合わせて上に置かない。
+#[test]
+fn a_new_box_is_placed_for_where_the_camera_stops() {
+    let mut h = harness_with_line();
+    let station = plan()[2];
+    h.move_cursor_to(GridPos { x: 4, y: 10 });
+    wait(&mut h, 600);
+    let t = Cam::at(64, 220);
+    play_mut(&mut h).camera = crate::camera::Camera {
+        pos: Cam::at(64, 120),
+        target: t,
+    };
+    play_mut(&mut h).fake_directive = Some(fake(
+        6,
+        DirectiveKind::Explanation,
+        Some(UiAnchor::Station(StationId(2))),
+    ));
+    h.frames(1);
+    assert_eq!(play(&h).camera.target, t, "前提: 止まる先は変わらない");
+    let moving = Cam::at(64, 145);
+    let low_half = |cam: Cam| 2 * tile_center(station, cam).1 >= crate::layout::SCREEN_H;
+    assert!(
+        !low_half(t) && low_half(moving),
+        "前提: 印は止まる先では上半分、1 フレーム進んだ途中の位置では下半分"
+    );
+    let s = play(&h).explain.shown.expect("説明");
+    let bottom = |r: Rect| r.y + r.h as i32;
+    assert_eq!(
+        bottom(s.area),
+        crate::layout::BOX_BOTTOM,
+        "止まる先の印が上半分なので下"
+    );
+    let first = s.area;
+    for f in 0..60 {
+        h.frames(1);
+        let s = play(&h).explain.shown.expect("説明");
+        assert_eq!(s.area, first, "{f}: 箱は動かない");
+    }
+    assert_eq!(play(&h).camera.pos, t);
+    let s = play(&h).explain.shown.expect("説明");
+    assert_eq!(
+        s.mark,
+        Some(Mark::Tile(crate::layout::tile_ring(station, t)))
+    );
+    assert!(
+        !overlaps(s.area, crate::layout::tile_ring(station, t)),
+        "印を隠さない"
+    );
+}
+
+/// #2「駅を選んでみよう」では、案内の駅(1 つ目の駅)を表示域に入れて枠で示す。縁の矢印だけにしない。
+/// 箱を閉じた後の案内でも同じ(シード 1〜100)。
+#[test]
+fn the_second_stage_frames_the_guided_station_on_every_seed() {
+    use crate::layout::tile_ring;
+    use tm_tutorial::TutorialStageId;
+    for seed in 1..=100 {
+        let mut h = UiHarness::with_seed(seed, true, tm_platform_api::MonoTime(0));
+        h.frames(1);
+        let first = h
+            .game
+            .as_ref()
+            .unwrap()
+            .view()
+            .stations()
+            .next()
+            .unwrap()
+            .pos;
+        for guard in 0.. {
+            let s = play(&h).explain.shown.expect("説明");
+            if s.directive.stage != TutorialStageId(1) {
+                break;
+            }
+            assert!(guard < 10, "seed {seed}: #1 が終わらない");
+            wait(&mut h, 320);
+            h.press(Action::Confirm);
+        }
+        for kind in [DirectiveKind::Explanation, DirectiveKind::Guide] {
+            // カメラは案内の駅へ寄るとき、行って戻らない(軸ごとに向きが変わらない)
+            let (mut last, mut dir) = (play(&h).camera.target, (0, 0));
+            for f in 0..36 {
+                h.frames(1);
+                let t = play(&h).camera.target;
+                let d = ((t.x - last.x).signum(), (t.y - last.y).signum());
+                for (now, was) in [(d.0, &mut dir.0), (d.1, &mut dir.1)] {
+                    assert!(
+                        now == 0 || *was == 0 || now == *was,
+                        "seed {seed} {kind:?} {f}: カメラが行って戻る"
+                    );
+                    if now != 0 {
+                        *was = now;
+                    }
+                }
+                last = t;
+            }
+            let s = play(&h).explain.shown.expect("#2");
+            assert_eq!(
+                (s.directive.stage, s.directive.kind),
+                (TutorialStageId(2), kind)
+            );
+            let what = format!("seed {seed} {kind:?}");
+            let cam = play(&h).camera.pos;
+            let ring = tile_ring(first, cam);
+            assert_eq!(s.mark, Some(Mark::Tile(ring)), "{what}: 案内の駅に枠");
+            assert!(
+                ring.y >= MAP_Y && ring.y + ring.h as i32 <= MAP_Y + MAP_H,
+                "{what}: 枠が表示域に収まる {ring:?}"
+            );
+            assert!(
+                h.draw_text()
+                    .contains(&super::sprite_at("ui_sel_tl", ring.x, ring.y)),
+                "{what}: 枠を描く"
+            );
+            assert_eq!(drawn_edge(&h), None, "{what}: 縁の矢印は出さない");
+            if s.boxed {
+                assert!(!overlaps(s.area, ring), "{what}: 箱で隠さない");
+                assert!(
+                    !overlaps(s.area, tile_ring(cursor(&h), cam)),
+                    "{what}: カーソルも隠さない"
+                );
+                h.press(Action::Confirm);
+            }
+        }
+    }
+}
+
+/// 始めの説明の箱が駅を隠し、縦に動かしても出せないときは、横に(3 マスより多くても、動きを見せずに)ずらして出す。
+#[test]
+fn the_first_box_moves_the_camera_sideways_off_the_starting_stations() {
+    let g = |x, y| GridPos { x, y };
+    let mut p = plan();
+    p[0] = g(17, 8);
+    p[1] = g(20, 4);
+    p[2] = g(14, 12);
+    let mut h = UiHarness::with_game(p.clone(), true);
+    h.frames(1);
+    let s = play(&h).explain.shown.expect("#1");
+    assert!(s.boxed);
+    let cam = play(&h).camera.pos;
+    let centred = Cam::at(
+        (14 + 20 + 1) * TILE / 2 - MAP_W / 2,
+        (4 + 12 + 1) * TILE / 2 - MAP_H / 2,
+    );
+    let ring = |q: GridPos, c: Cam| crate::layout::tile_ring(q, c);
+    assert!(
+        overlaps(s.area, ring(p[2], centred)),
+        "前提: 外接矩形の中心のままなら (14, 12) が箱に隠れる"
+    );
+    assert_eq!(
+        (
+            tile_screen(p[1], centred).1,
+            tile_screen(p[2], centred).1 + TILE
+        ),
+        (MAP_Y, MAP_Y + MAP_H),
+        "前提: 上と下の駅が表示域の上下の端にあり、縦には動かせない"
+    );
+    assert_eq!(cam.y, centred.y, "縦は動かさない");
+    assert!(cam.x - centred.x > 3 * TILE, "横に 3 マスより多く: {cam:?}");
+    for &q in &p[..3] {
+        assert!(tile_in_view(q, cam, MAP_W), "{q:?} が見える");
+        assert!(!overlaps(s.area, ring(q, cam)), "{q:?} を箱で隠さない");
+    }
+    let (x, _) = tile_screen(cursor(&h), cam);
+    assert!(
+        x - MAP_X >= 2 * TILE && x - MAP_X + TILE <= MAP_W - 2 * TILE,
+        "カーソルの 2 マスの余白は保つ"
+    );
+    h.frames(60);
+    assert_eq!(play(&h).camera.pos, cam, "置き直した後は動かない");
+}
+
+/// 始め以外のページでも、新しい箱が駅を隠し、縦に動かしても出せないときは、カメラを横に(3 マスまで)動かして出す。
+#[test]
+fn a_new_box_moves_the_camera_sideways_off_a_station() {
+    let g = |x, y| GridPos { x, y };
+    let mut p = plan();
+    p[0] = g(14, 3);
+    p[1] = g(9, 11);
+    p[2] = g(17, 7);
+    let mut h = UiHarness::with_game(p.clone(), false);
+    h.frames(1);
+    h.move_cursor_to(g(20, 7));
+    wait(&mut h, 600);
+    let t = Cam::at(160, 96);
+    play_mut(&mut h).camera = crate::camera::Camera { pos: t, target: t };
+    h.frames(1);
+    assert_eq!(
+        play(&h).camera.target,
+        t,
+        "前提: カーソルを追っても動かない位置"
+    );
+    assert_eq!(
+        (tile_screen(p[0], t).1, tile_screen(p[1], t).1 + TILE),
+        (MAP_Y, MAP_Y + MAP_H),
+        "前提: 上と下の駅が表示域の上下の端にあり、縦には動かせない"
+    );
+    play_mut(&mut h).fake_directive = Some(fake(6, DirectiveKind::Explanation, None));
+    h.frames(1);
+    let s = play(&h).explain.shown.expect("説明");
+    let ring = |q: GridPos, c: Cam| crate::layout::tile_ring(q, c);
+    assert!(
+        overlaps(s.area, ring(p[1], t)),
+        "前提: 動かさなければ (9, 11) が箱に隠れる"
+    );
+    assert_eq!(
+        play(&h).camera.target,
+        Cam::at(206, 96),
+        "右へ 46px(1 マスより多く)"
+    );
+    wait(&mut h, 600);
+    let cam = play(&h).camera.pos;
+    assert_eq!(cam, Cam::at(206, 96));
+    let s = play(&h).explain.shown.expect("説明");
+    for &q in &p[..3] {
+        assert!(tile_in_view(q, cam, MAP_W), "{q:?} が見える");
+        assert!(!overlaps(s.area, ring(q, cam)), "{q:?} を箱で隠さない");
+    }
+}
+
+/// ゲームの画面を始めたフレームに highlight のある説明が出ていれば、案内の対象をカーソルと一緒に、動きを見せずに見せる。
+#[test]
+fn a_highlight_on_the_first_frame_is_shown_without_moving_the_camera() {
+    let g = |x, y| GridPos { x, y };
+    let mut p = plan();
+    p[0] = g(5, 9);
+    p[1] = g(20, 9);
+    p[2] = g(34, 9);
+    let mut h = UiHarness::with_game(p.clone(), false);
+    play_mut(&mut h).fake_directive = Some(fake(
+        6,
+        DirectiveKind::Explanation,
+        Some(UiAnchor::Station(StationId(2))),
+    ));
+    h.frames(1);
+    let cam = play(&h).camera.pos;
+    assert_eq!(cursor(&h), g(19, 9), "前提: 中央の駅の左");
+    let s = play(&h).explain.shown.expect("説明");
+    assert_eq!(
+        s.mark,
+        Some(Mark::Tile(crate::layout::tile_ring(p[2], cam))),
+        "始めから案内の駅に枠"
+    );
+    assert!(tile_in_view(cursor(&h), cam, MAP_W), "カーソルも見える");
+    for f in 0..60 {
+        h.frames(1);
+        assert_eq!(play(&h).camera.pos, cam, "{f}: 動かない");
+    }
+}
+
+/// 新しい箱が駅を隠しても、出すために動かすと案内の駅が余白から出るなら、カメラは動かさない(動いて戻らない)。
+#[test]
+fn a_new_box_does_not_move_the_camera_off_the_guided_station() {
+    let g = |x, y| GridPos { x, y };
+    let mut p = plan();
+    p[0] = g(3, 6);
+    p[1] = g(11, 3);
+    p[2] = g(12, 8);
+    let mut h = UiHarness::with_game(p.clone(), false);
+    h.frames(1);
+    h.move_cursor_to(g(14, 6));
+    wait(&mut h, 600);
+    let t = Cam::at(64, 76);
+    play_mut(&mut h).camera = crate::camera::Camera { pos: t, target: t };
+    h.frames(1);
+    assert_eq!(
+        play(&h).camera.target,
+        t,
+        "前提: カーソルを追っても動かない位置"
+    );
+    let mut d = fake(
+        6,
+        DirectiveKind::Explanation,
+        Some(UiAnchor::Station(StationId(1))),
+    );
+    d.message = tm_assets::txt::TUT_S09_P2;
+    play_mut(&mut h).fake_directive = Some(d);
+    for f in 0..40 {
+        h.frames(1);
+        assert_eq!(play(&h).camera.target, t, "{f}: 動かない");
+    }
+    let s = play(&h).explain.shown.expect("説明");
+    let ring = |q: GridPos| crate::layout::tile_ring(q, t);
+    assert_eq!(s.mark, Some(Mark::Tile(ring(p[1]))), "案内の駅に枠");
+    assert_eq!(
+        tile_screen(p[1], t).1 - MAP_Y,
+        20,
+        "前提: 案内の駅は上から 20px"
+    );
+    assert!(
+        overlaps(s.area, ring(p[2])),
+        "前提: (12, 8) は箱に隠れる(出すには下へ 10px 動かし、案内の駅が半マスの余白から出る)"
+    );
+}
+
+/// 新しい箱の上下を選ぶとき、隠した駅をカメラで出せるかは案内の駅を余白に残したまま見る。
+/// 上(印が下半分なので先に試す側)は、駅を出すと案内の駅が半マスの余白から出るので、出せる下を選ぶ。
+#[test]
+fn a_new_box_counts_only_fixes_that_keep_the_guided_station() {
+    let g = |x, y| GridPos { x, y };
+    let mut p = plan();
+    p[0] = g(10, 3);
+    p[1] = g(7, 6);
+    p[2] = g(18, 8);
+    let mut h = UiHarness::with_game(p.clone(), false);
+    h.frames(1);
+    h.move_cursor_to(g(13, 5));
+    wait(&mut h, 600);
+    let t = Cam::at(16, 16);
+    play_mut(&mut h).camera = crate::camera::Camera { pos: t, target: t };
+    h.frames(1);
+    assert_eq!(
+        play(&h).camera.target,
+        t,
+        "前提: カーソルを追っても動かない位置"
+    );
+    assert_eq!(
+        tile_screen(p[2], t).1 + TILE,
+        MAP_Y + MAP_H - 16,
+        "前提: 案内の駅は下から半マス"
+    );
+    let mut d = fake(
+        6,
+        DirectiveKind::Explanation,
+        Some(UiAnchor::Station(StationId(2))),
+    );
+    d.message = tm_assets::txt::TUT_S09_P2;
+    play_mut(&mut h).fake_directive = Some(d);
+    h.frames(1);
+    let s = play(&h).explain.shown.expect("説明");
+    let ring = |q: GridPos, c: Cam| crate::layout::tile_ring(q, c);
+    let high = crate::scene::explain::page_rect(crate::layout::EXPLAIN_X, 2, true);
+    assert!(
+        overlaps(high, ring(p[0], t)),
+        "前提: 上の箱は (10, 3) を隠す"
+    );
+    assert!(
+        overlaps(s.area, ring(p[1], t)),
+        "前提: 下の箱は (7, 6) を隠す"
+    );
+    assert_eq!(s.area.y + s.area.h as i32, crate::layout::BOX_BOTTOM, "下");
+    wait(&mut h, 600);
+    let cam = play(&h).camera.pos;
+    assert_eq!(cam, Cam::at(16, 22), "下へ 6px 動かして (7, 6) を出す");
+    let s = play(&h).explain.shown.expect("説明");
+    assert_eq!(s.mark, Some(Mark::Tile(ring(p[2], cam))));
+    for &q in &p[..3] {
+        assert!(!overlaps(s.area, ring(q, cam)), "{q:?} を箱で隠さない");
+    }
 }

@@ -183,7 +183,14 @@ fn first_explanation_draws_box_dim_and_pages() {
         "カーソルも見えたまま"
     );
     let text = h.draw_text();
-    assert_eq!(text.matches(DIM).count(), 4, "highlight の場所は重ねない");
+    let dim = |kind: &str| {
+        text.lines()
+            .filter(|l| l.starts_with(kind) && l.contains(DIM))
+            .count()
+    };
+    assert_eq!(dim("Fill "), 4, "highlight の場所は重ねない");
+    assert_eq!(dim("Sprite ui_hole_"), 4, "枠の丸い角の外も暗くする");
+    assert_eq!(text.matches(DIM).count(), 8);
     let r = frame_rect(&h);
     let arrow = if r.y - 24 < crate::layout::MAP_Y {
         "Sprite fx_arrow_up "

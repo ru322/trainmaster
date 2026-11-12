@@ -3,7 +3,9 @@
 use sdl2::pixels::Color as SdlColor;
 use sdl2::rect::FPoint;
 use sdl2::render::Vertex;
-use tm_platform_api::{Color, LOGICAL_HEIGHT, LOGICAL_WIDTH, Rect};
+use tm_platform_api::{Color, Rect};
+#[cfg(test)]
+use tm_platform_api::{LOGICAL_HEIGHT, LOGICAL_WIDTH};
 
 /// `u16` の添字で描ける四角形の数。
 pub(crate) const MAX_QUADS: usize = 16_383;
@@ -83,7 +85,7 @@ impl QuadBatch {
     }
 }
 
-/// 論理座標の矩形(端を含まない)。平行移動や画面外の大きな値で溢れないよう i64 で持つ。
+/// 矩形(端を含まない。描き先の画素か論理座標)。平行移動や画面外の大きな値で溢れないよう i64 で持つ。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Area {
     pub(crate) x0: i64,
@@ -92,7 +94,8 @@ pub(crate) struct Area {
     pub(crate) y1: i64,
 }
 
-/// 画面(640×360)。
+/// 論理の画面(640×360)。
+#[cfg(test)]
 pub(crate) const SCREEN: Area = Area {
     x0: 0,
     y0: 0,
@@ -111,6 +114,7 @@ impl Area {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn shifted(self, dx: i64, dy: i64) -> Area {
         Area {
             x0: self.x0 + dx,

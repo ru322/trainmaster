@@ -16,5 +16,7 @@ Palette(
         ('e', "green", 0x1F7A3DFF),
         ('s', "shadow", 0x00000060),
         ('a', "accent", 0xE69F00FF),
+        ('G', "glass", 0x9CCBEBFF),
+        ('d', "dark", 0x2E2E36FF),
     ],
 )

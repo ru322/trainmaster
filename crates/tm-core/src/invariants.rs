@@ -615,13 +615,21 @@ fn inv19_unconnected(st: &GameState) -> Result<(), InvariantViolation> {
 }
 
 fn inv21_line_born_level(st: &GameState) -> Result<(), InvariantViolation> {
-    for l in &st.lines {
+    for (i, l) in st.lines.iter().enumerate() {
         ensure(l.born_level <= st.company.level, "INV-21", || {
             format!(
                 "{}: 作ったときの会社 {}、いま {}",
                 l.id, l.born_level, st.company.level
             )
         })?;
+        if let Some(prev) = i.checked_sub(1).map(|j| &st.lines[j]) {
+            ensure(prev.born_level <= l.born_level, "INV-21", || {
+                format!(
+                    "{} の作ったときの会社 {} が前の {} の {} より小さい",
+                    l.id, l.born_level, prev.id, prev.born_level
+                )
+            })?;
+        }
     }
     Ok(())
 }

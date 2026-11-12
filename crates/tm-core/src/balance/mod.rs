@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use tm_numeric::BigNum;
 
 use crate::ids::{CompanyLevel, Level, StationId};
-use crate::param::{Feature, ParamKey};
+use crate::param::{Feature, ParamKey, ParamOwner};
 use crate::units::{Cars, MilliPeople, Money, People, Permille, Quarter, SpeedMilli};
 
 pub(crate) use derived::BalanceDerived;
@@ -20,7 +20,8 @@ pub use validate::BalanceError;
 
 /// `BalanceSpec` の形式の版。フィールドを変えたら上げる(config hash にも入る)。
 /// 3 = `value_steps` と `economy.upgrade_floor`(M8)。4 = `transit.spawn_level_margin`(M9)。
-pub const BALANCE_FORMAT_VERSION: u32 = 4;
+/// 5 = `upgrade_floor.from_level`(M10)。
+pub const BALANCE_FORMAT_VERSION: u32 = 5;
 
 /// 検証済みの表。`from_spec` / `from_ron_str` でしか作れない。
 #[derive(Clone, Debug, PartialEq)]
@@ -194,12 +195,15 @@ pub struct EconomyRules {
     pub upgrade_floor: UpgradeFloorRules,
 }
 
-/// あとから出た駅・作った路線の強化の値段の下限(M8)。会社レベル `B` で生まれた駅・路線の、固有上限のない
-/// パラメータ(`B − behind` までに解放済み)は、Lv `cap(B − behind)` の値段より安くならない。
+/// あとから出た駅・作った路線の強化の値段の下限(M8、M10)。会社レベル `B`(`from_level` 以上)で生まれた駅・
+/// 路線の、`B − behind` までに解放済みのパラメータが対象。基準の値段 = S1 の Lv `cap(B − behind)` の値段。
+/// 固有上限のないものは Lv `cap(B − behind)` の値段より、固有上限のあるものは基準の値段より安くならない。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UpgradeFloorRules {
     /// 生まれた会社レベルから何レベル前の上限を下限のレベルにするか(1 以上)。
     pub behind: u8,
+    /// この会社レベル以上で生まれた駅・路線だけが対象。
+    pub from_level: u8,
 }
 
 /// 線路の値段 [01 §4.1 D-20](10 TD-41)。1 マス `c1 × level_ratio^(C−1) × tile_ratio^min(N, tile_cap)`。
@@ -240,21 +244,39 @@ impl BalanceTable {
         self.derived.cost[p.index()][usize::from(from.0)]
     }
 
-    /// 会社レベル `born` で生まれた駅・路線の `p` の値段の下限のレベル(`UpgradeFloorRules`)。下限がなければ 0。
+    /// 値段の下限の基準の会社レベル `B − behind`。`born` で生まれた `p` が対象でなければ `None`。
+    fn floor_company(&self, p: ParamKey, born: CompanyLevel) -> Option<CompanyLevel> {
+        let rules = &self.spec.economy.upgrade_floor;
+        let c = born.0.checked_sub(rules.behind)?;
+        let owned = p.owner() != ParamOwner::Company;
+        (owned && born.0 >= rules.from_level && self.param(p).unlock <= c)
+            .then_some(CompanyLevel(c))
+    }
+
+    /// 会社レベル `born` で生まれた駅・路線の `p`(固有上限なし)の値段の下限のレベル。下限がなければ 0。
     pub fn floor_level(&self, p: ParamKey, born: CompanyLevel) -> Level {
-        let def = self.param(p);
-        let behind = self.spec.economy.upgrade_floor.behind;
-        match born.0.checked_sub(behind) {
-            Some(c) if def.intrinsic_max.is_none() && def.unlock <= c => {
-                Level(self.cap(CompanyLevel(c)))
-            }
+        match self.floor_company(p, born) {
+            Some(c) if self.param(p).intrinsic_max.is_none() => Level(self.cap(c)),
             _ => Level::ZERO,
         }
     }
 
-    /// 会社レベル `born` で生まれた駅・路線の `p` を `from` → `from + 1` にする値段(下限つき)。
+    /// 会社レベル `born` で生まれた駅・路線の `p` を `from` → `from + 1` にする値段(下限つき。`UpgradeFloorRules`)。
     pub fn upgrade_cost(&self, p: ParamKey, from: Level, born: CompanyLevel) -> Money {
-        self.cost(p, from.max(self.floor_level(p, born)))
+        let def = self.param(p);
+        let base = self.cost(p, from.max(self.floor_level(p, born)));
+        let Some(c) = self
+            .floor_company(p, born)
+            .filter(|_| def.intrinsic_max.is_some())
+        else {
+            return base;
+        };
+        let era = self.cost(ParamKey::S1Spawn, Level(self.cap(c)));
+        if era.total_cmp(&base) == core::cmp::Ordering::Greater {
+            era
+        } else {
+            base
+        }
     }
 
     /// 駅が出る会社レベル(最初の `stations_base` 駅は 0、そのあとは 1 レベルに `stations_per_level` 駅)。

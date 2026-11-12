@@ -11,7 +11,7 @@ use std::time::Instant;
 
 use common::{Rig, Spy, TITLE_READY_FRAME, saving, wait_saved};
 use tm_app::{App, MemStore, SeedPolicy};
-use tm_platform_api::{AudioCmd, HeadlessClock, HeadlessPlatform, Key};
+use tm_platform_api::{AudioCmd, DrawCmd, DrawList, HeadlessClock, HeadlessPlatform, Key};
 
 /// 生きているヒープのバイト数を数える。
 struct CountingAlloc;
@@ -46,17 +46,34 @@ unsafe impl GlobalAlloc for CountingAlloc {
 #[global_allocator]
 static ALLOC: CountingAlloc = CountingAlloc;
 
-/// 1 フレームの `AudioCmd` の上限と、描画コマンドの上限(16 §2.4 APP-T-22)。
+/// 1 フレームの `AudioCmd` の上限と、描画要素の上限(16 §2.4 APP-T-22)。描画要素は 02 §9.2 のとおり、
+/// キャッシュ層を中身によらず 1 個と数える(`draw_elements`)。
 const MAX_AUDIO_PER_FRAME: usize = 64;
-const MAX_DRAW_CMDS: usize = 2000;
+const MAX_DRAW_ELEMENTS: usize = 2000;
 /// 基準の後、タイトルでヒープが増えてよい幅(バイト)と、生きているブロックの数。
 /// 幅の中には保存の文字列と test-support の `Ui::ui_log`(App から消せない)が増える分が入る。
 const HEAP_SLACK: usize = 8 * 1024;
 const BLOCK_SLACK: usize = 8;
 const TICKS_PER_FRAME: u64 = 4;
 const HOUR: u64 = 3600 * 60;
-/// 描画コマンドの容量の上限(`MAX_DRAW_CMDS` の倍々の 1 段)。
-const MAX_DRAW_CAP: usize = 2048;
+/// 描画コマンドの列(キャッシュ層の中身を含む)の容量の上限。層の中身は縦に切った 2 枚でマップ全体の線路の分まで入り、
+/// 重い場面(27 駅・路線 6 本・散らばり)で列は約 3,400(tm-ui の予算のテスト)なので、その倍々の 1 段。
+const MAX_DRAW_CAP: usize = 4096;
+
+/// 描画要素の数。キャッシュ層の Begin〜End の中身は数えず、`DrawCachedLayer` を 1 個と数える(02 §9.2)。
+fn draw_elements(list: &DrawList) -> usize {
+    let mut inside = false;
+    let mut n = 0;
+    for c in &list.cmds {
+        match c {
+            DrawCmd::BeginCachedLayer { .. } => inside = true,
+            DrawCmd::EndCachedLayer => inside = false,
+            _ if !inside => n += 1,
+            _ => {}
+        }
+    }
+    n
+}
 
 /// `HeadlessPlatform` が溜める音の記録の分(`Vec` の倍々の容量)を引いた、生きているヒープ。
 fn heap(r: &Rig) -> usize {
@@ -98,7 +115,7 @@ impl Spy for WatchSpy {
             w.max_audio = w.max_audio.max(per_frame);
         }
         w.audio_mark = log.len();
-        let draw = app.draw_list().cmds.len();
+        let draw = draw_elements(app.draw_list());
         w.max_draw_cmds = w.max_draw_cmds.max(draw);
         w.max_draw_cap = w.max_draw_cap.max(app.draw_list().cmds.capacity());
         assert!(
@@ -106,7 +123,7 @@ impl Spy for WatchSpy {
             "音の命令 {}",
             w.max_audio
         );
-        assert!(draw <= MAX_DRAW_CMDS, "描画コマンド {draw}");
+        assert!(draw <= MAX_DRAW_ELEMENTS, "描画要素 {draw}");
     }
 }
 
@@ -277,7 +294,7 @@ fn soak(games: &[&[Cut]]) -> Soak {
     s.close(r);
     let w = s.watch.borrow();
     assert!(w.max_audio <= MAX_AUDIO_PER_FRAME);
-    assert!(w.max_draw_cmds <= MAX_DRAW_CMDS);
+    assert!(w.max_draw_cmds <= MAX_DRAW_ELEMENTS);
     assert!(w.max_draw_cap <= MAX_DRAW_CAP, "{}", w.max_draw_cap);
     drop(w);
     // 基準は最初の App の放置の 4 分の 1 の後(終わる直前を入れると、App の中で溜まる分を見落とす)
@@ -318,7 +335,7 @@ fn soak(games: &[&[Cut]]) -> Soak {
 fn report(s: &Soak) {
     let w = s.watch.borrow();
     println!(
-        "APP-V-06: App::frame {:.1} µs/フレーム({} フレーム、{} tick、App {} 個、続きから {} 回、保存 {} 回)、描画コマンド最大 {}(容量 {})、音の命令/フレーム最大 {}、タイトルのヒープとブロック(新しい App、リセット後) {:?}、ゲーム中(放置の 4 分の 1 の後、終わる直前) {:?}",
+        "APP-V-06: App::frame {:.1} µs/フレーム({} フレーム、{} tick、App {} 個、続きから {} 回、保存 {} 回)、描画要素最大 {}(層は 1 個。列の容量 {})、音の命令/フレーム最大 {}、タイトルのヒープとブロック(新しい App、リセット後) {:?}、ゲーム中(放置の 4 分の 1 の後、終わる直前) {:?}",
         s.idle_us as f64 / s.idle_frames as f64,
         s.frames,
         s.ticks,

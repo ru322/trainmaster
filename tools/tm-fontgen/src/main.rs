@@ -9,8 +9,8 @@ use tm_fontgen::{build, emit, generate, load, preview, proof, report};
 const USAGE: &str = "使い方:
   tm-fontgen build [--config assets/fonts/fontgen.toml] [--out crates/tm-assets/generated]
   tm-fontgen check [--config ..]
-  tm-fontgen preview [--face <id>] [--scale 3] \"電車の会社\" [-o preview.png]
-  tm-fontgen proof [--scale 3] [-o proof]
+  tm-fontgen preview [--face <id>] [--scale 1] \"電車の会社\" [-o preview.png]
+  tm-fontgen proof [--scale 1] [-o proof]
   tm-fontgen report [--config ..]
   --face の既定は fontgen.toml の最初の face
   共通: --root <dir>(fontgen.toml の中のパスの起点。既定はカレントディレクトリ)";
@@ -30,7 +30,7 @@ fn parse_opts(args: &[String]) -> Result<Opts, String> {
         root: ".".into(),
         out: None,
         face: None,
-        scale: 3,
+        scale: 1,
         positional: Vec::new(),
     };
     let mut it = args.iter();

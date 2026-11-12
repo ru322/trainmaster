@@ -1,11 +1,11 @@
-SaveHeader(magic: "TMSAVE", save_format: 1, rules_version: 4, config_hash: 17578581834517322700, game_version: "0.1.0", seq: 13, tick: 36000, state_hash: 14424721378769808695, body_fnv: 11909843596297195928)
+SaveHeader(magic: "TMSAVE", save_format: 1, rules_version: 5, config_hash: 17657101426005311307, game_version: "0.1.0", seq: 13, tick: 36000, state_hash: 5357886249391719540, body_fnv: 166939817340689532)
 SaveBody(
     game: GameSnapshot(
         format: 2,
-        rules_version: 4,
-        config_hash: 17578581834517322700,
+        rules_version: 5,
+        config_hash: 17657101426005311307,
         seed: 1,
-        state_hash: 14424721378769808695,
+        state_hash: 5357886249391719540,
         tick: 36000,
         money_bits: 4647811572469596160,
         total_earned_bits: 4647943513864929280,

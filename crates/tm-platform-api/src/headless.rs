@@ -4,8 +4,10 @@ use std::collections::BTreeMap;
 
 use crate::assets::{AssetBundle, AtlasImage, SpriteRect};
 use crate::audio::{AudioCmd, SoundData, SoundKind};
-use crate::draw::{DrawCmd, DrawList, SpriteId};
-use crate::geom::{Color, LOGICAL_HEIGHT, LOGICAL_WIDTH, Rect};
+use crate::draw::{DrawCmd, DrawList, SpriteId, quad_rows};
+use crate::geom::{
+    Color, LOGICAL_HEIGHT, LOGICAL_WIDTH, RENDER_HEIGHT, RENDER_SCALE, RENDER_WIDTH, Rect,
+};
 use crate::input::{Key, PhysicalInput};
 use crate::platform::{Platform, PlatformError};
 use crate::time::MonoTime;
@@ -289,8 +291,9 @@ impl Platform for HeadlessPlatform {
 }
 
 const LAYERS: usize = 4;
-const W: i64 = LOGICAL_WIDTH as i64;
-const H: i64 = LOGICAL_HEIGHT as i64;
+const K: i64 = RENDER_SCALE as i64;
+const W: i64 = RENDER_WIDTH as i64;
+const H: i64 = RENDER_HEIGHT as i64;
 const OPAQUE_BLACK: Color = Color {
     r: 0,
     g: 0,
@@ -298,6 +301,7 @@ const OPAQUE_BLACK: Color = Color {
     a: 255,
 };
 
+/// 描画の画素の矩形(端を含まない)。
 #[derive(Clone, Copy)]
 struct Area {
     x0: i64,
@@ -307,13 +311,14 @@ struct Area {
 }
 
 impl Area {
-    fn of(r: Rect) -> Area {
-        let (x, y) = (i64::from(r.x), i64::from(r.y));
+    /// 論理座標の `r` を `shift`(論理)だけ動かした、描画の画素の範囲。
+    fn scaled(r: Rect, shift: (i64, i64)) -> Area {
+        let (x, y) = (i64::from(r.x) + shift.0, i64::from(r.y) + shift.1);
         Area {
-            x0: x,
-            y0: y,
-            x1: x + i64::from(r.w),
-            y1: y + i64::from(r.h),
+            x0: x * K,
+            y0: y * K,
+            x1: (x + i64::from(r.w)) * K,
+            y1: (y + i64::from(r.h)) * K,
         }
     }
 
@@ -323,6 +328,16 @@ impl Area {
             y0: self.y0.max(o.y0),
             x1: self.x1.min(o.x1),
             y1: self.y1.min(o.y1),
+        }
+    }
+
+    /// この範囲を覆う論理座標の範囲。
+    fn logical(self) -> Area {
+        Area {
+            x0: self.x0.div_euclid(K),
+            y0: self.y0.div_euclid(K),
+            x1: (self.x1 + K - 1).div_euclid(K),
+            y1: (self.y1 + K - 1).div_euclid(K),
         }
     }
 }
@@ -376,9 +391,10 @@ fn layer_sections(cmds: &[DrawCmd]) -> [Option<(usize, usize, Rect)>; LAYERS] {
     sections
 }
 
-/// `DrawList` を 640×360 の RGBA(ストレートアルファ、行優先)に描く参照用のラスタライザ [14 §2.3]。
-/// 整数だけで計算し、キャッシュ層は常にその場描きする(14 §3.5.3)。拡大縮小は SDL2 のソフトウェアの描画と同じ 16.16 の固定小数点の最近傍。
-/// SDL の描画との一致を保証するのは、スプライトの座標の絶対値が 2^24 未満で、幅と高さが `i32::MAX / 2` 以下のときだけ。
+/// `DrawList` を描画の解像度(1920×1080)の RGBA(ストレートアルファ、行優先)に描く参照用のラスタライザ [14 §2.3]。
+/// 論理座標は `RENDER_SCALE` 倍にし、整数だけで計算する。キャッシュ層は常にその場描きする(14 §3.5.3)。
+/// 拡大縮小は SDL2 のソフトウェアの描画と同じ 16.16 の固定小数点の最近傍。スプライトの矩形は `AssetBundle::source_rect` で選ぶ。
+/// SDL の描画との一致を保証するのは、描画の画素の座標の絶対値が 2^24 未満で、幅と高さが `i32::MAX / 2` 以下のときだけ。
 #[derive(Clone, Debug)]
 pub struct SoftRaster {
     px: Vec<u8>,
@@ -425,7 +441,7 @@ impl SoftRaster {
         }
     }
 
-    /// 画素(RGBA、640×360、行優先)。
+    /// 画素(RGBA、1920×1080、行優先)。
     pub fn pixels(&self) -> &[u8] {
         &self.px
     }
@@ -437,7 +453,7 @@ impl SoftRaster {
     }
 
     fn inline(&mut self, assets: &AssetBundle, content: &[DrawCmd], place: Rect) {
-        let clip = Area::of(place).meet(SCREEN);
+        let clip = Area::scaled(place, (0, 0)).meet(SCREEN);
         for &cmd in content {
             let cmd = match cmd {
                 DrawCmd::Clear(color) => DrawCmd::FillRect {
@@ -455,9 +471,12 @@ impl SoftRaster {
         }
     }
 
+    /// `shift` は論理座標、`clip` は描画の画素。
     fn cmd(&mut self, assets: &AssetBundle, cmd: DrawCmd, shift: (i64, i64), clip: Area) {
         match cmd {
-            DrawCmd::FillRect { rect, color } => self.fill(Area::of(rect), shift, clip, color),
+            DrawCmd::FillRect { rect, color } => {
+                self.fill(Area::scaled(rect, shift).meet(clip), color)
+            }
             DrawCmd::Line {
                 x0,
                 y0,
@@ -467,17 +486,33 @@ impl SoftRaster {
             } => {
                 let from = (i64::from(x0) + shift.0, i64::from(y0) + shift.1);
                 let to = (i64::from(x1) + shift.0, i64::from(y1) + shift.1);
-                for (x, y) in line_pixels(from, to, clip) {
+                for (x, y) in line_pixels(from, to, clip.logical()) {
                     let a = Area {
-                        x0: x,
-                        y0: y,
-                        x1: x + 1,
-                        y1: y + 1,
+                        x0: x * K,
+                        y0: y * K,
+                        x1: (x + 1) * K,
+                        y1: (y + 1) * K,
                     };
-                    self.fill(a, (0, 0), clip, color);
+                    self.fill(a.meet(clip), color);
                 }
             }
             DrawCmd::Sprite { id, dst, tint } => self.sprite(assets, id, dst, shift, clip, tint),
+            DrawCmd::Quad { pts, color } => {
+                let pts =
+                    pts.map(|(x, y)| (i64::from(x) + shift.0 * K, i64::from(y) + shift.1 * K));
+                let clip = (clip.x0, clip.y0, clip.x1, clip.y1);
+                quad_rows(pts, clip, |y, x0, x1| {
+                    self.fill(
+                        Area {
+                            x0,
+                            y0: y,
+                            x1,
+                            y1: y + 1,
+                        },
+                        color,
+                    )
+                });
+            }
             DrawCmd::Clear(_)
             | DrawCmd::BeginCachedLayer { .. }
             | DrawCmd::EndCachedLayer
@@ -485,14 +520,8 @@ impl SoftRaster {
         }
     }
 
-    fn fill(&mut self, a: Area, shift: (i64, i64), clip: Area, c: Color) {
-        let a = Area {
-            x0: a.x0 + shift.0,
-            y0: a.y0 + shift.1,
-            x1: a.x1 + shift.0,
-            y1: a.y1 + shift.1,
-        }
-        .meet(clip);
+    fn fill(&mut self, a: Area, c: Color) {
+        let a = a.meet(SCREEN);
         for y in a.y0..a.y1 {
             for x in a.x0..a.x1 {
                 self.blend(x, y, [c.r, c.g, c.b], c.a);
@@ -509,31 +538,25 @@ impl SoftRaster {
         clip: Area,
         tint: Color,
     ) {
-        let Some(src) = assets.sprites.get(usize::from(id.0)) else {
+        if dst.w == 0 || dst.h == 0 {
+            return;
+        }
+        let d = Area::scaled(dst, shift);
+        let (dw, dh) = (d.x1 - d.x0, d.y1 - d.y0);
+        let Some(src) = assets.source_rect(id, dw as u64, dh as u64) else {
             return;
         };
         let Some(page) = assets.atlases.get(usize::from(src.atlas)) else {
             return;
         };
-        if dst.w == 0 || dst.h == 0 {
-            return;
-        }
-        let (dx, dy) = (i64::from(dst.x) + shift.0, i64::from(dst.y) + shift.1);
-        let (dw, dh) = (i64::from(dst.w), i64::from(dst.h));
         let (sw, sh) = (i64::from(src.w), i64::from(src.h));
-        let a = Area {
-            x0: dx,
-            y0: dy,
-            x1: dx + dw,
-            y1: dy + dh,
-        }
-        .meet(clip);
+        let a = d.meet(clip).meet(SCREEN);
         let pitch = i64::from(page.width);
         let (inc_x, inc_y) = ((sw << 16) / dw, (sh << 16) / dh);
         for y in a.y0..a.y1 {
-            let sy = i64::from(src.y) + ((inc_y / 2 + (y - dy) * inc_y) >> 16);
+            let sy = i64::from(src.y) + ((inc_y / 2 + (y - d.y0) * inc_y) >> 16);
             for x in a.x0..a.x1 {
-                let sx = i64::from(src.x) + ((inc_x / 2 + (x - dx) * inc_x) >> 16);
+                let sx = i64::from(src.x) + ((inc_x / 2 + (x - d.x0) * inc_x) >> 16);
                 let i = ((sy * pitch + sx) * 4) as usize;
                 let t = &page.rgba[i..i + 4];
                 let m = |v: u8, k: u8| (u32::from(v) * u32::from(k) / 255) as u8;
@@ -559,7 +582,7 @@ impl SoftRaster {
     }
 }
 
-/// 両端を含むブレゼンハムの線の画素のうち、`clip` の中のもの(14 §3.4)。主軸の見える範囲だけを数える。
+/// 両端を含むブレゼンハムの線の画素(論理座標)のうち、`clip`(論理座標)の中のもの(14 §3.4)。主軸の見える範囲だけを数える。
 /// 主軸の i 番目の画素の副軸は `⌊(2·i·副 + 主) / (2·主)⌋`。
 fn line_pixels(from: (i64, i64), to: (i64, i64), clip: Area) -> impl Iterator<Item = (i64, i64)> {
     let (dx, dy) = (to.0 - from.0, to.1 - from.1);
@@ -627,6 +650,7 @@ static SOUNDS: [SoundData; 2] = [
 static MINIMAL: AssetBundle = AssetBundle {
     atlases: &ATLASES,
     sprites: &SPRITES,
+    alt: &[],
     sounds: &SOUNDS,
     white: SpriteId(0),
 };

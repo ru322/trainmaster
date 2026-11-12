@@ -1,7 +1,9 @@
-width = 1024
+width = 2048
+render_scale = 3
 
+# 高さは 2048・1536・1280 のどれか(SDL のソフトウェアの描画が f32 の UV から画素の行に戻すとき、ほかの高さではずれる行がある)
 [[page]]
 strips = [
-  { owner = "font", height = 768 },
-  { owner = "sprites", height = 256 },
+  { owner = "font", height = 896 },
+  { owner = "sprites", height = 640 },
 ]

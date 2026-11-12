@@ -19,7 +19,7 @@ use crate::hud::decimal;
 use crate::layout::{
     BOX_BOTTOM, BOX_TOP_Y, Cam, EXPLAIN_PAD, EXPLAIN_W, EXPLAIN_X, EXPLAIN_X_PANEL, MAP_H,
     MAP_SCALE, MAP_W, MAP_W_PANEL, MAP_X, MAP_Y, SCREEN_H, SCREEN_W, TILE, explain_h, tile_center,
-    tile_in_view,
+    tile_in_view, tile_ring,
 };
 use crate::settings::Settings;
 use crate::text::{DynText, TextBlock};
@@ -77,6 +77,8 @@ pub(crate) struct ExplainView {
     picks: Vec<GridPos>,
     /// `permits` に通す仮の `CreateLine`(毎フレーム確保しないように使い回す)。
     probe: Option<Command>,
+    /// 説明の箱を置いたページ(と highlight)と、上に置いたか(同じページの間は、カーソルを隠すときだけ動かす)。
+    side: Option<(TutorialStageId, u8, Option<UiAnchor>, bool)>,
 }
 
 impl ExplainView {
@@ -104,21 +106,7 @@ impl ExplainView {
     pub(crate) fn focus(&self, view: GameView<'_>, paths: &[Vec<GridPos>]) -> Option<GridPos> {
         let s = self.shown?;
         s.mark?;
-        match s.directive.highlight? {
-            UiAnchor::Station(id) => view.station(id).map(|s| s.pos),
-            UiAnchor::Line(id) => paths
-                .get(id.index())
-                .and_then(|p| p.get(p.len() / 2))
-                .copied(),
-            UiAnchor::Train(id) => view.train(id).map(|t| {
-                let u = POS_UNITS_PER_TILE as i64;
-                GridPos {
-                    x: (t.point.x / u) as i32,
-                    y: (t.point.y / u) as i32,
-                }
-            }),
-            _ => None,
-        }
+        anchor_tile(view, paths, s.directive.highlight?)
     }
 
     /// 「作る」の下書き中に小さな丸を付ける駅(テスト用)。
@@ -126,6 +114,30 @@ impl ExplainView {
     pub(crate) fn picks(&self) -> &[GridPos] {
         &self.picks
     }
+}
+
+/// highlight の対象のマップのマス(駅、路線の真ん中のマス、列車のいるマス)。マップの対象でなければ `None`。
+fn anchor_tile(view: GameView<'_>, paths: &[Vec<GridPos>], a: UiAnchor) -> Option<GridPos> {
+    match a {
+        UiAnchor::Station(id) => view.station(id).map(|s| s.pos),
+        UiAnchor::Line(id) => paths
+            .get(id.index())
+            .and_then(|p| p.get(p.len() / 2))
+            .copied(),
+        UiAnchor::Train(id) => view.train(id).map(|t| {
+            let u = POS_UNITS_PER_TILE as i64;
+            GridPos {
+                x: (t.point.x / u) as i32,
+                y: (t.point.y / u) as i32,
+            }
+        }),
+        _ => None,
+    }
+}
+
+/// 説明の箱から駅を出すときに、カメラを横に動かしてよい量。始めのフレームは動きが見えないので広く、それ以外は 3 マス。
+const fn reach(start: bool) -> i32 {
+    if start { 8 * TILE } else { 3 * TILE }
 }
 
 /// 2 Hz の三角波(0..=half)。
@@ -328,30 +340,74 @@ fn draw_edge(b: &mut DrawBuilder<'_>, m: Mark, map_w: i32, now: MonoTime, c: Col
     b.map_sprite(id, x, y, c);
 }
 
-/// 説明の箱を下か上に置く。印が下半分なら上を先に試し、印と重なる方は避ける [13 §3.5]。
-/// 印に重ならない方が、マップのカーソル(`cursor`。画面の矩形)にも重なるなら、もう一方が印にもカーソルにも重ならなければそちらにする。
-fn place_box(x: i32, lines: u8, mark: Option<Mark>, cursor: Option<Rect>) -> Rect {
-    let low = page_rect(x, lines, false);
-    let high = page_rect(x, lines, true);
-    let (first, second) = match mark {
-        Some(m) if 2 * m.center_y() >= SCREEN_H => (high, low),
-        _ => (low, high),
-    };
-    let area = mark.map(mark_area);
-    let on_mark = |r: Rect| area.is_some_and(|a| overlaps(r, a));
-    let on_cursor = |r: Rect| cursor.is_some_and(|c| overlaps(r, c));
-    let free = |r: Rect| !on_mark(r) && !on_cursor(r);
-    if (on_mark(first) && !on_mark(second)) || (!on_mark(first) && on_cursor(first) && free(second))
-    {
-        second
-    } else {
-        first
-    }
+/// 説明の箱の置き場所を決める材料。どれもカメラが止まる先(目標)で見た画面の矩形。
+#[derive(Default)]
+struct BoxSpot {
+    /// highlight の印。
+    mark: Option<Mark>,
+    /// マップのカーソルの絵。
+    cursor: Option<Rect>,
+    /// カーソルの絵のいまの位置と止まる先を合わせ、上下に半マス広げた矩形(新しいページで避ける)。
+    near: Option<Rect>,
+    /// 見えている駅の枠。
+    stations: Vec<Rect>,
 }
 
-/// うすい黒を `hole` の外だけに 1 まい重ねる。
-fn dim_around(b: &mut DrawBuilder<'_>, hole: Option<Rect>) {
-    let Some(h) = hole else {
+/// 箱の置き場所の候補ごとに、カメラで直せるか(下 = 0、上 = 1)。
+#[derive(Clone, Copy, Debug, Default)]
+struct Fixable {
+    /// カーソルに重なっても、カメラを寄せればカーソルを箱の外へ出せる。
+    cursor: bool,
+    /// 見えている駅を隠しても、カメラを縦に少し動かせば全部を箱の外へ出せる。
+    stations: bool,
+}
+
+/// 説明の箱を下か上に置く [13 §3.5]。`prev` は同じページで前のフレームに置いた側(上なら true)。
+/// - 同じページの間は動かさない。ただしカメラが止まった後もカーソルを隠すなら、隠さない側へ移す(カメラの動きの途中で跳ばない)。
+/// - 新しいページでは、次の順で良い方: カーソルを(カメラで直しても)隠さない → 印を隠さない → 見えている駅を(カメラで直しても)
+///   隠す数が少ない → カメラを動かさずに済む → カーソルから半マス離れている → 印が下半分なら上、それ以外は下。
+fn place_box(
+    x: i32,
+    lines: u8,
+    prev: Option<bool>,
+    spot: &BoxSpot,
+    fix: [Fixable; 2],
+) -> (Rect, bool) {
+    let side = |top: bool| page_rect(x, lines, top);
+    let hits = |r: Rect, o: Option<Rect>| o.is_some_and(|o| overlaps(r, o));
+    if let Some(top) = prev {
+        let moved = hits(side(top), spot.cursor) && !hits(side(!top), spot.cursor);
+        let top = top != moved;
+        return (side(top), top);
+    }
+    let first = spot.mark.is_some_and(|m| 2 * m.center_y() >= SCREEN_H);
+    let area = spot.mark.map(mark_area);
+    let key = |top: bool| {
+        let r = side(top);
+        let f = fix[usize::from(top)];
+        let on_cursor = hits(r, spot.cursor);
+        let hidden = spot.stations.iter().filter(|&&s| overlaps(r, s)).count();
+        let left = if f.stations { 0 } else { hidden };
+        (
+            on_cursor && !f.cursor,
+            hits(r, area),
+            left,
+            on_cursor || hidden > 0,
+            hits(r, spot.near),
+            top != first,
+        )
+    };
+    let top = if key(!first) < key(first) {
+        !first
+    } else {
+        first
+    };
+    (side(top), top)
+}
+
+/// うすい黒を `hole` の外だけに 1 まい重ねる。穴の四隅は、`scale` 倍の `ui_sel` の丸い角の外も暗くする。
+fn dim_around(b: &mut DrawBuilder<'_>, hole: Option<(Rect, i32)>) {
+    let Some((h, scale)) = hole else {
         b.fill(SCREEN, DIM);
         return;
     };
@@ -368,6 +424,20 @@ fn dim_around(b: &mut DrawBuilder<'_>, hole: Option<Rect>) {
     for r in parts.into_iter().filter(|r| r.w > 0 && r.h > 0) {
         b.fill(r, DIM);
     }
+    let c = i32::from(sprite::NS_UI_SEL.corner) * scale;
+    let (r, bt) = (h.x + h.w as i32 - c, h.y + h.h as i32 - c);
+    for (id, x, y) in [
+        (sprite::UI_HOLE_TL, h.x, h.y),
+        (sprite::UI_HOLE_TR, r, h.y),
+        (sprite::UI_HOLE_BL, h.x, bt),
+        (sprite::UI_HOLE_BR, r, bt),
+    ] {
+        b.push(DrawCmd::Sprite {
+            id,
+            dst: rect(x, y, c as u32, c as u32),
+            tint: DIM,
+        });
+    }
 }
 
 impl PlayScene {
@@ -379,7 +449,7 @@ impl PlayScene {
         }
     }
 
-    fn places<'a>(&'a self, view: GameView<'a>) -> Places<'a> {
+    fn places<'a>(&'a self, view: GameView<'a>, cam: Cam) -> Places<'a> {
         let (panel, build) = match &self.mode {
             PlayMode::Map => (None, None),
             PlayMode::Panel(p) => (Some(&**p), None),
@@ -387,7 +457,7 @@ impl PlayScene {
         };
         Places {
             view,
-            cam: self.camera.pos,
+            cam,
             map_w: self.map_w(),
             paths: self.map.as_ref().map_or(&[][..], |m| &m.paths[..]),
             panel,
@@ -408,6 +478,8 @@ impl PlayScene {
     ) -> bool {
         let dev = self.dev;
         let menu_open = self.settings_menu.is_some();
+        // ゲームの画面を始めたフレームか(説明がなくても、そのフレームで終わり)
+        let start = std::mem::take(&mut self.camera_new);
         let Some(d) = self.directive(tutorial) else {
             if let PlayMode::Panel(p) = &mut self.mode {
                 p.explaining = false;
@@ -432,7 +504,8 @@ impl PlayScene {
         self.band.set_guide(guide.then_some(d.message), dev);
         let visible = boxed || (guide && !menu_open);
         let mark = if visible {
-            d.highlight.and_then(|a| self.places(view).resolve(a))
+            d.highlight
+                .and_then(|a| self.places(view, self.camera.pos).resolve(a))
         } else {
             None
         };
@@ -443,14 +516,63 @@ impl PlayScene {
                 .set(d.message, &[], FontId::Head16, page_w, dev);
         }
         let lines = self.explain.page.block.lines;
+        let paths = self.map.as_ref().map_or(&[][..], |m| &m.paths[..]);
+        let hint = d
+            .highlight
+            .filter(|_| mark.is_some())
+            .and_then(|a| anchor_tile(view, paths, a));
         // #15 は せってい の下に固定する(highlight の反対側の規則を使わない。UI-D-35)
-        let cursor = Some(tile_rect(self.cursor, self.camera.pos));
-        let area = if menu_open {
+        let area = if menu_open || !boxed {
+            if !boxed {
+                self.explain.side = None;
+            }
             page_rect(EXPLAIN_X, lines, false)
-        } else if matches!(self.mode, PlayMode::Panel(_)) {
-            place_box(EXPLAIN_X_PANEL, lines, mark, cursor)
         } else {
-            place_box(EXPLAIN_X, lines, mark, cursor)
+            let x = if matches!(self.mode, PlayMode::Panel(_)) {
+                EXPLAIN_X_PANEL
+            } else {
+                EXPLAIN_X
+            };
+            let spot = self.box_spot(view, d.highlight);
+            let prev = self
+                .explain
+                .side
+                .filter(|&(st, pg, hl, _)| (st, pg, hl) == (d.stage, d.page, d.highlight))
+                .map(|(.., top)| top);
+            let fix = if prev.is_none() {
+                [false, true]
+                    .map(|top| self.box_fixable(view, page_rect(x, lines, top), hint, start))
+            } else {
+                [Fixable::default(); 2]
+            };
+            let (area, top) = place_box(x, lines, prev, &spot, fix);
+            self.explain.side = Some((d.stage, d.page, d.highlight, top));
+            if prev.is_none() {
+                self.clear_stations_of(view, area, hint, start);
+            }
+            area
+        };
+        // 箱を置いた(移した)フレームにカーソルが隠れるなら、カメラをすぐ寄せる(次のフレームからは帯を避けて追う)。
+        // ゲームの画面を始めたフレームなら、箱に合わせて追う位置まで動きを見せずに置く
+        let hidden_cursor = overlaps(area, tile_ring(self.cursor, self.camera.pos));
+        let mark = if boxed && !menu_open && (start || hidden_cursor) {
+            let vp = self.viewport_with_box(view, Some(area));
+            if start {
+                self.camera.follow(self.cursor, hint, vp);
+                self.camera.pos = self.camera.target;
+            }
+            self.camera.keep_visible(self.cursor, vp);
+            if start {
+                self.camera.target = self.camera.pos;
+            }
+            if visible {
+                d.highlight
+                    .and_then(|a| self.places(view, self.camera.pos).resolve(a))
+            } else {
+                mark
+            }
+        } else {
+            mark
         };
         let loud = self.band.notice_text() == Some(txt::ERR_TUTORIAL);
         self.explain.shown = Some(Shown {
@@ -490,6 +612,73 @@ impl PlayScene {
             );
         }
         fresh
+    }
+
+    /// 説明の箱を `area` に置いたとき、カメラで直せるもの。`hint` は highlight のマップの対象、`start` はゲームの画面を始めたフレーム。
+    fn box_fixable(
+        &self,
+        view: GameView<'_>,
+        area: Rect,
+        hint: Option<GridPos>,
+        start: bool,
+    ) -> Fixable {
+        let vp = self.viewport_with_box(view, Some(area));
+        let mut c = self.camera;
+        c.keep_visible(self.cursor, vp);
+        let cursor = !overlaps(area, tile_ring(self.cursor, c.pos));
+        let stations: Vec<GridPos> = view.stations().map(|s| s.pos).collect();
+        let mut c = self.camera;
+        Fixable {
+            cursor,
+            stations: c.clear_box(&stations, self.cursor, hint, reach(start), vp),
+        }
+    }
+
+    /// 新しく置いた説明の箱が見えている駅を隠すなら、カメラの目標を少し動かして箱の外へ出す(できるときだけ)。
+    /// ゲームの画面を始めたフレームなら、動きを見せずにすぐ置く(横に広く探す)。
+    fn clear_stations_of(
+        &mut self,
+        view: GameView<'_>,
+        area: Rect,
+        hint: Option<GridPos>,
+        start: bool,
+    ) {
+        let (at, view_w) = (self.camera.target, self.map_w());
+        let hidden = view
+            .stations()
+            .any(|s| tile_in_view(s.pos, at, view_w) && overlaps(area, tile_ring(s.pos, at)));
+        if !hidden {
+            return;
+        }
+        let stations: Vec<GridPos> = view.stations().map(|s| s.pos).collect();
+        let vp = self.viewport_with_box(view, Some(area));
+        if self
+            .camera
+            .clear_box(&stations, self.cursor, hint, reach(start), vp)
+            && start
+        {
+            self.camera.pos = self.camera.target;
+        }
+    }
+
+    /// 説明の箱の置き場所を決める材料を、カメラが止まる先で集める。
+    fn box_spot(&self, view: GameView<'_>, highlight: Option<UiAnchor>) -> BoxSpot {
+        let (now, at) = (self.camera.pos, self.camera.target);
+        let view_w = self.map_w();
+        let cursor = tile_ring(self.cursor, at);
+        let was = tile_ring(self.cursor, now);
+        let y0 = cursor.y.min(was.y) - TILE / 2;
+        let y1 = (cursor.y + cursor.h as i32).max(was.y + was.h as i32) + TILE / 2;
+        BoxSpot {
+            mark: highlight.and_then(|a| self.places(view, at).resolve(a)),
+            cursor: Some(cursor),
+            near: Some(rect(cursor.x, y0, cursor.w, (y1 - y0) as u32)),
+            stations: view
+                .stations()
+                .filter(|s| tile_in_view(s.pos, at, view_w))
+                .map(|s| tile_ring(s.pos, at))
+                .collect(),
+        }
     }
 
     /// 「作る」の下書き中で highlight がないとき、選べる駅(と、2 駅目からは仕上げの最後の駅)を集める [13 §6.5]。
@@ -712,9 +901,21 @@ mod tests {
         assert_eq!(moving.x, MAP_X + 2 + BOUNCE, "4px はねる");
     }
 
+    fn spot(m: Mark) -> BoxSpot {
+        BoxSpot {
+            mark: Some(m),
+            ..BoxSpot::default()
+        }
+    }
+
+    const NONE: [Fixable; 2] = [Fixable {
+        cursor: false,
+        stations: false,
+    }; 2];
+
     #[test]
     fn box_moves_to_the_other_side_when_the_first_choice_covers_the_mark() {
-        let low = place_box(EXPLAIN_X, EXPLAIN_LINES, None, None);
+        let low = place_box(EXPLAIN_X, EXPLAIN_LINES, None, &BoxSpot::default(), NONE).0;
         let high = page_rect(EXPLAIN_X, EXPLAIN_LINES, true);
         let top = high.y + high.h as i32 + 14;
         let m = Mark::Frame(rect(
@@ -727,15 +928,120 @@ mod tests {
         assert!(overlaps(low, mark_area(m)), "前提: 下は印と重なる");
         assert!(!overlaps(high, mark_area(m)), "前提: 上は重ならない");
         assert_eq!(
-            place_box(EXPLAIN_X, EXPLAIN_LINES, Some(m), None),
+            place_box(EXPLAIN_X, EXPLAIN_LINES, None, &spot(m), NONE).0,
             high,
             "重ならない上へ"
         );
         let small = Mark::Frame(rect(EXPLAIN_X + 20, 60, 20, 20));
         assert_eq!(
-            place_box(EXPLAIN_X, EXPLAIN_LINES, Some(small), None),
+            place_box(EXPLAIN_X, EXPLAIN_LINES, None, &spot(small), NONE).0,
             low,
             "上半分の印なら下"
+        );
+    }
+
+    #[test]
+    fn a_new_box_takes_the_side_that_hides_the_cursor_only_when_the_camera_can_fix_it() {
+        let low = page_rect(EXPLAIN_X, EXPLAIN_LINES, false);
+        let high = page_rect(EXPLAIN_X, EXPLAIN_LINES, true);
+        let m = Mark::Frame(rect(EXPLAIN_X + 20, 60, 20, 20));
+        let s = BoxSpot {
+            mark: Some(m),
+            cursor: Some(rect(EXPLAIN_X + 100, low.y + 4, 44, 44)),
+            ..BoxSpot::default()
+        };
+        assert!(overlaps(high, mark_area(m)), "前提: 上は印を隠す");
+        assert!(
+            overlaps(low, s.cursor.unwrap()) && !overlaps(high, s.cursor.unwrap()),
+            "前提: 下はカーソルを隠す"
+        );
+        assert_eq!(
+            place_box(EXPLAIN_X, EXPLAIN_LINES, None, &s, NONE).0,
+            high,
+            "カーソルを隠さないことが、印を隠さないことより先"
+        );
+        let fixable = [
+            Fixable {
+                cursor: true,
+                stations: false,
+            },
+            Fixable::default(),
+        ];
+        assert_eq!(
+            place_box(EXPLAIN_X, EXPLAIN_LINES, None, &s, fixable).0,
+            low,
+            "カメラでカーソルを出せるなら、印を隠さない下"
+        );
+    }
+
+    #[test]
+    fn a_new_box_hides_fewer_stations_that_the_camera_cannot_free() {
+        let low = page_rect(EXPLAIN_X, EXPLAIN_LINES, false);
+        let high = page_rect(EXPLAIN_X, EXPLAIN_LINES, true);
+        let st = |x: i32, y: i32| rect(x, y, 44, 44);
+        let s = BoxSpot {
+            stations: vec![
+                st(EXPLAIN_X + 40, low.y + 4),
+                st(EXPLAIN_X + 200, low.y + 4),
+                st(EXPLAIN_X + 120, high.y + 4),
+            ],
+            ..BoxSpot::default()
+        };
+        assert_eq!(
+            place_box(EXPLAIN_X, EXPLAIN_LINES, None, &s, NONE).0,
+            high,
+            "印がなければ下だが、下は 2 駅、上は 1 駅を隠す"
+        );
+        let low_fixable = [
+            Fixable {
+                cursor: false,
+                stations: true,
+            },
+            Fixable::default(),
+        ];
+        assert_eq!(
+            place_box(EXPLAIN_X, EXPLAIN_LINES, None, &s, low_fixable).0,
+            low,
+            "下の駅をカメラで出せるなら下"
+        );
+    }
+
+    #[test]
+    fn on_the_same_page_the_box_moves_only_to_a_side_that_frees_the_cursor() {
+        let low = page_rect(EXPLAIN_X, EXPLAIN_LINES, false);
+        let high = page_rect(EXPLAIN_X, EXPLAIN_LINES, true);
+        let on = |cursor: Rect| BoxSpot {
+            cursor: Some(cursor),
+            ..BoxSpot::default()
+        };
+        let under_high = on(rect(EXPLAIN_X + 100, high.y + 4, 44, 44));
+        assert_eq!(
+            place_box(EXPLAIN_X, EXPLAIN_LINES, Some(true), &under_high, NONE).0,
+            low,
+            "上の箱がカーソルを隠すなら下へ"
+        );
+        let tall = rect(
+            EXPLAIN_X + 100,
+            high.y,
+            44,
+            (low.y + low.h as i32 - high.y) as u32,
+        );
+        assert!(
+            overlaps(high, tall) && overlaps(low, tall),
+            "前提: どちらもカーソルを隠す"
+        );
+        for top in [true, false] {
+            assert_eq!(
+                place_box(EXPLAIN_X, EXPLAIN_LINES, Some(top), &on(tall), NONE).1,
+                top,
+                "移しても隠すなら動かさない"
+            );
+        }
+        let free = on(rect(EXPLAIN_X + 100, SCREEN_H / 2 - 22, 44, 44));
+        assert!(!overlaps(high, free.cursor.unwrap()) && !overlaps(low, free.cursor.unwrap()));
+        assert!(
+            place_box(EXPLAIN_X, EXPLAIN_LINES, Some(true), &free, NONE).1,
+            "隠さなければ動かさない"
         );
     }
 

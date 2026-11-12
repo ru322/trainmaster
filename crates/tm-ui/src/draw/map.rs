@@ -4,7 +4,7 @@ use tm_assets::sprite::{self, BandVariant};
 use tm_core::{
     Dir8, GameView, GridPos, LineId, MapPoint, POS_UNITS_PER_TILE, StationId, TrackSegment,
 };
-use tm_platform_api::{DrawCmd, LayerId, MonoTime, Rect};
+use tm_platform_api::{Color, DrawCmd, LayerId, MonoTime, Rect, SpriteId};
 
 use super::palette::{self, line_color};
 use super::{DrawBuilder, Shed, map_sprite_cmd, rect};
@@ -26,11 +26,17 @@ pub(crate) fn waiting_marks(n: u64) -> (Option<tm_platform_api::SpriteId>, bool)
     (waiting_dots(n, DOTS_MAX), n > DOTS_MAX)
 }
 
-/// 待っている人の点の絵。点の数は駅で待てる人数 `capacity` に対する割合(切り上げ、1〜10 個)で、
-/// 待てる人数以上なら 10 個。待てる人数が 10 人なら 1 人 1 個(M8)。
+/// 待っている人の点の絵。点の数は駅で待てる人数 `capacity` に対する割合(切り捨て、1〜9 個)で、
+/// 待てる人数以上(満員)のときだけ 10 個。待てる人数が 10 人なら 1 人 1 個(M8、M10)。
 pub(crate) fn waiting_dots(n: u64, capacity: u64) -> Option<tm_platform_api::SpriteId> {
-    let k = (u128::from(n) * u128::from(DOTS_MAX)).div_ceil(u128::from(capacity.max(1)));
-    (n > 0).then(|| sprite::PAX_DOTS[k.min(u128::from(DOTS_MAX)) as usize])
+    let cap = capacity.max(1);
+    let k = if n >= cap {
+        DOTS_MAX
+    } else {
+        let share = u128::from(n) * u128::from(DOTS_MAX) / u128::from(cap);
+        (share as u64).max(1)
+    };
+    (n > 0).then(|| sprite::PAX_DOTS[k as usize])
 }
 
 /// 辺 = 隣り合う 2 マスの間の区間。`dir` が E、SE、S、SW になる側のマスで表す。
@@ -153,6 +159,77 @@ pub(crate) fn band_pieces(paths: &[(LineId, &[GridPos])], lanes: &EdgeLanes) -> 
     out
 }
 
+/// 線路の絵の設計のマス(`tm-spritegen` の `TRACK_TILE`)に対するマップのマスの倍率。
+const TRACK_K: i32 = TILE / sprite::TRACK_TILE as i32;
+const _: () = assert!(TILE == sprite::TRACK_TILE as i32 * TRACK_K && TRACK_K == MAP_SCALE);
+/// 線路と帯をなぞる四角いペンの太さ(論理 px。線路の縁、線路の中身、帯の縁、帯の中身)。正は `tm-spritegen` の `TRACK_PENS`。
+pub(crate) const RAIL_OUTLINE_W: i32 = sprite::TRACK_PENS[0] as i32 * TRACK_K;
+pub(crate) const RAIL_W: i32 = sprite::TRACK_PENS[1] as i32 * TRACK_K;
+pub(crate) const BAND_OUTLINE_W: i32 = sprite::TRACK_PENS[2] as i32 * TRACK_K;
+pub(crate) const BAND_W: i32 = sprite::TRACK_PENS[3] as i32 * TRACK_K;
+const _: () = assert!(
+    RAIL_OUTLINE_W % 2 == 0 && RAIL_W % 2 == 0 && BAND_OUTLINE_W % 2 == 0 && BAND_W % 2 == 0,
+    "half_cmd はペンの半分の幅を使うので偶数"
+);
+
+/// 半区間の線分(層の論理 px)。`from` は中心の側、`to` は辺の中点(斜めは角)の側。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct HalfSeg {
+    pub from: (i32, i32),
+    pub to: (i32, i32),
+}
+
+/// マス `tile` の中心から `dir` の辺の中点(斜めは角)への線分。帯の版 `band` はレーンのずれを足し、集める版は中心の側をずらさない。
+pub(crate) fn half_seg(tile: GridPos, dir: Dir8, band: Option<BandVariant>) -> HalfSeg {
+    let (lx, ly) = tile_layer(tile);
+    let c = (lx + TILE / 2, ly + TILE / 2);
+    let (dx, dy) = dir.delta();
+    let (sx, sy) = band.map_or((0, 0), |v| lane_shift(dir, v));
+    let conv = matches!(band, Some(BandVariant::Lane0Conv | BandVariant::Lane2Conv));
+    HalfSeg {
+        from: if conv { c } else { (c.0 + sx, c.1 + sy) },
+        to: (c.0 + dx * TILE / 2 + sx, c.1 + dy * TILE / 2 + sy),
+    }
+}
+
+/// 帯のレーンのずれ。縦横の辺は 3/16 マス、斜めの辺は x と y に 1/8 マスずつ(正は `TRACK_LANES`)。`Lane0` が北・西・北西・南西の側。
+fn lane_shift(dir: Dir8, v: BandVariant) -> (i32, i32) {
+    let k = match v {
+        BandVariant::Center => 0,
+        BandVariant::Lane0 | BandVariant::Lane0Conv => -1,
+        BandVariant::Lane2 | BandVariant::Lane2Conv => 1,
+    };
+    let (s, d) = (
+        k * sprite::TRACK_LANES[0] as i32 * TRACK_K,
+        k * sprite::TRACK_LANES[1] as i32 * TRACK_K,
+    );
+    match dir {
+        Dir8::E | Dir8::W => (0, s),
+        Dir8::N | Dir8::S => (s, 0),
+        Dir8::NE | Dir8::SW => (d, d),
+        Dir8::NW | Dir8::SE => (d, -d),
+    }
+}
+
+/// 線分を幅 `w` の四角いペンでなぞった形の外接矩形に、半区間の絵を置く。絵の大きさ(設計 × `MAP_SCALE`)と合わないペンはデバッグビルドで止める。
+pub(crate) fn half_cmd(id: SpriteId, seg: HalfSeg, w: i32, tint: Color) -> DrawCmd {
+    let h = w / 2;
+    let (x0, y0) = (seg.from.0.min(seg.to.0) - h, seg.from.1.min(seg.to.1) - h);
+    let (x1, y1) = (seg.from.0.max(seg.to.0) + h, seg.from.1.max(seg.to.1) + h);
+    let m = sprite::meta(id);
+    debug_assert_eq!(
+        (x1 - x0, y1 - y0),
+        (i32::from(m.w) * MAP_SCALE, i32::from(m.h) * MAP_SCALE),
+        "{} とペンの太さ {w} が合わない",
+        sprite::name(id)
+    );
+    DrawCmd::Sprite {
+        id,
+        dst: rect(x0, y0, (x1 - x0) as u32, (y1 - y0) as u32),
+        tint,
+    }
+}
+
 /// 路線の線路を区間の順につないだマスの列(駅のマスは 1 回だけ)。
 pub(crate) fn line_path(segments: &[TrackSegment], out: &mut Vec<GridPos>) {
     out.clear();
@@ -268,7 +345,10 @@ fn build_layer(
         });
     }
     let grid = view.track_grid();
-    for table in [&sprite::TRK_RAIL_O, &sprite::TRK_RAIL_F] {
+    for (table, w) in [
+        (&sprite::TRK_RAIL_O, RAIL_OUTLINE_W),
+        (&sprite::TRK_RAIL_F, RAIL_W),
+    ] {
         for (i, m) in grid.masks.iter().enumerate() {
             if m.is_empty() {
                 continue;
@@ -277,26 +357,26 @@ fn build_layer(
                 x: (i % usize::from(grid.width)) as i32,
                 y: (i / usize::from(grid.width)) as i32,
             };
-            let (lx, ly) = tile_layer(pos);
             for d in Dir8::ALL {
                 if m.contains(d) {
-                    out.push(map_sprite_cmd(table[d as usize], lx, ly, palette::WHITE));
+                    let seg = half_seg(pos, d, None);
+                    out.push(half_cmd(table[d as usize], seg, w, palette::WHITE));
                 }
             }
         }
     }
     for fill in [false, true] {
         for p in pieces {
-            let (lx, ly) = tile_layer(p.tile);
-            let (table, tint) = if fill {
-                (&sprite::TRK_BAND_F, line_color(p.line))
+            let (table, w, tint) = if fill {
+                (&sprite::TRK_BAND_F, BAND_W, line_color(p.line))
             } else {
-                (&sprite::TRK_BAND_O, palette::WHITE)
+                (&sprite::TRK_BAND_O, BAND_OUTLINE_W, palette::WHITE)
             };
-            out.push(map_sprite_cmd(
+            let seg = half_seg(p.tile, p.dir, Some(p.variant));
+            out.push(half_cmd(
                 table[p.dir as usize][p.variant as usize],
-                lx,
-                ly,
+                seg,
+                w,
                 tint,
             ));
         }
@@ -471,7 +551,7 @@ pub(crate) fn draw_static(b: &mut DrawBuilder<'_>, cache: &MapCache, cam: Cam, v
     }
 }
 
-/// 列車(絵 + 番号の札)。表示域の外の列車は描かない。
+/// 列車(路線の色の車体、色を付けない窓と前照灯、番号の札)。表示域の外の列車は描かない。
 pub(crate) fn draw_trains(b: &mut DrawBuilder<'_>, view: GameView<'_>, cam: Cam, view_w: i32) {
     for t in view.trains() {
         let (x, y) = train_screen(t.point, cam);
@@ -480,6 +560,7 @@ pub(crate) fn draw_trains(b: &mut DrawBuilder<'_>, view: GameView<'_>, cam: Cam,
         }
         let c = line_color(t.line);
         b.map_sprite(sprite::TRN[t.heading as usize], x, y, c);
+        b.map_sprite(sprite::TRN_GLASS[t.heading as usize], x, y, palette::WHITE);
         b.map_sprite(
             sprite::LINE_NO[t.line.index() % sprite::LINE_NO.len()],
             x + 7 * MAP_SCALE,

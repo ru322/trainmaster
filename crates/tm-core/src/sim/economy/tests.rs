@@ -430,20 +430,21 @@ fn late_station_costs_start_at_the_floor() {
             .unwrap()
             .cost
     };
-    for s in 0..=4 {
-        assert_eq!(one(&st, s), b.cost(S1Spawn, Level(0)), "S{s}");
+    for s in 0..=5 {
+        assert_eq!(
+            one(&st, s),
+            b.cost(S1Spawn, Level(0)),
+            "S{s}: 会社 Lv3 までに出た駅"
+        );
     }
-    assert_eq!(one(&st, 5), b.cost(S1Spawn, Level(4)));
     assert_eq!(one(&st, 6), b.cost(S1Spawn, Level(6)));
     set_station(&mut st, 6, S1Spawn, 9);
     assert_eq!(one(&st, 6), b.cost(S1Spawn, Level(9)));
 
     let all = plan_purchase(&st, b, S2Fare, AllStations, BuyMode::One).unwrap();
-    let want = (0..5).fold(
-        b.cost(S2Fare, Level(4))
-            .saturating_add(b.cost(S2Fare, Level(6))),
-        |m, _| m.saturating_add(b.cost(S2Fare, Level(0))),
-    );
+    let want = (0..6).fold(b.cost(S2Fare, Level(6)), |m, _| {
+        m.saturating_add(b.cost(S2Fare, Level(0)))
+    });
     assert_eq!(all.cost, want);
 
     set_station(&mut st, 6, S3StationCap, 0);
@@ -462,7 +463,7 @@ fn late_station_costs_start_at_the_floor() {
 }
 
 #[test]
-fn late_line_costs_start_at_the_floor_but_finite_params_do_not() {
+fn late_line_costs_start_at_the_floor() {
     let b = bal();
     let mut st = seven();
     st.company.level = CompanyLevel(8);
@@ -476,8 +477,14 @@ fn late_line_costs_start_at_the_floor_but_finite_params_do_not() {
     };
     assert_eq!(one(T4CarCapacity), b.cost(T4CarCapacity, Level(12)));
     assert_eq!(one(T3Boarding), b.cost(T3Boarding, Level(12)));
-    assert_eq!(one(T1Speed), b.cost(T1Speed, Level(0)));
-    assert_eq!(one(R1MaxTrains), b.cost(R1MaxTrains, Level(0)));
+    let era = b.cost(S1Spawn, Level(12));
+    assert_eq!(
+        one(T1Speed),
+        era,
+        "固有上限のある設備は S1 の Lv cap(4) の値段(M10)"
+    );
+    assert_eq!(one(R1MaxTrains), era);
+    assert_eq!(one(T5Cars), era);
     st.lines[0].born_level = CompanyLevel(6);
     assert_eq!(
         plan_purchase(

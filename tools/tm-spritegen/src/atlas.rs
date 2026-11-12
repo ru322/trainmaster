@@ -16,11 +16,18 @@ pub struct Strip {
     pub y: u32,
     /// 帯の高さ(行)。
     pub height: u32,
+    /// 論理 1px の描画の画素数(`atlas.toml` の `render_scale`。省略は 1)。
+    pub render_scale: u32,
 }
+
+/// ページの幅と高さの上限(VideoCore IV のテクスチャの上限)。
+pub const MAX_PAGE: u32 = 2048;
 
 #[derive(Deserialize)]
 struct AtlasFile {
     width: u32,
+    #[serde(default)]
+    render_scale: Option<u32>,
     page: Vec<PageDef>,
 }
 
@@ -41,11 +48,15 @@ fn err(message: impl Into<String>) -> SpriteError {
     }
 }
 
-/// `atlas.toml` から `owner = "sprites"` の帯を探す。ページは 1024 以下に収まることを確かめる。
+/// `atlas.toml` から `owner = "sprites"` の帯を探す。ページは `MAX_PAGE` 以下に収まることを確かめる。
 pub fn parse(text: &str) -> Result<Strip, SpriteError> {
     let file: AtlasFile = toml::from_str(text).map_err(|e| err(e.to_string()))?;
-    if file.width == 0 || file.width > 1024 {
-        return Err(err("width は 1〜1024"));
+    if file.width == 0 || file.width > MAX_PAGE {
+        return Err(err(format!("width は 1〜{MAX_PAGE}")));
+    }
+    let render_scale = file.render_scale.unwrap_or(1);
+    if !(1..=4).contains(&render_scale) {
+        return Err(err("render_scale は 1〜4"));
     }
     let mut found = None;
     for (page, p) in file.page.iter().enumerate() {
@@ -61,13 +72,14 @@ pub fn parse(text: &str) -> Result<Strip, SpriteError> {
                     index: index as u32,
                     y,
                     height: s.height,
+                    render_scale,
                 });
             }
             y += s.height;
         }
-        if y > 1024 {
+        if y > MAX_PAGE {
             return Err(err(format!(
-                "page {page} の帯の高さの合計 {y} が 1024 を超える"
+                "page {page} の帯の高さの合計 {y} が {MAX_PAGE} を超える"
             )));
         }
     }

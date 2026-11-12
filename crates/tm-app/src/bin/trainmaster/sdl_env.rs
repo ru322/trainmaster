@@ -37,6 +37,7 @@ pub fn to_sdl_config(p: &PlatformEnv) -> SdlConfig {
         DisplayChoice::Fullscreen => DisplayMode::Fullscreen,
         DisplayChoice::Windowed { scale } => DisplayMode::Windowed { scale },
     };
+    c.window_scale = p.window_scale;
     c.frame_cap = if p.fps30 {
         FrameCap::Fps30
     } else {
@@ -94,8 +95,18 @@ mod tests {
         assert!(!c.audio.enabled);
         assert_eq!(c.audio.buffer_samples, 4096);
         assert_eq!(
-            launch(&[("TM_WINDOW_SCALE", "4")]).display,
+            launch(&[("TM_DISPLAY", "window"), ("TM_WINDOW_SCALE", "4")]).display,
             DisplayMode::Windowed { scale: 4 }
+        );
+        assert_eq!(
+            launch(&[("TM_WINDOW_SCALE", "4")]).display,
+            DisplayMode::Auto,
+            "開発機の既定はフルスクリーン(ウィンドウは TM_DISPLAY=window)"
+        );
+        assert_eq!(
+            launch(&[("TM_WINDOW_SCALE", "4")]).window_scale,
+            4,
+            "F11 で戻るウィンドウ"
         );
     }
 

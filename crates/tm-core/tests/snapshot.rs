@@ -100,20 +100,25 @@ fn snapshot_ron_golden() {
     assert_eq!(r.state_hash(), g.state_hash());
 }
 
-/// 前の版(M7 の `RULES_VERSION` 2、M8 の 3)の写しは読めないか、作り直しで断る。panic しない。
+/// 前の版の写しは断る。panic しない。M7(`SNAPSHOT_FORMAT_VERSION` 1)は `born_level` がなく RON として読めない。
+/// M8・M9(形式 2、`RULES_VERSION` 3・4)は読めるが `RulesVersion` で断る。
 #[test]
 fn previous_format_snapshot_is_refused() {
-    for name in ["snapshot_rules2.ron", "snapshot_rules3.ron"] {
+    let read = |name: &str| {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("tests/golden")
             .join(name);
-        let text = std::fs::read_to_string(path).expect("前の版のゴールデン");
-        match ron::from_str::<GameSnapshot>(&text) {
-            Err(_) => {}
-            Ok(s) => {
-                let r = Game::restore(std::sync::Arc::new(tm_core::BalanceTable::builtin()), &s);
-                assert!(r.is_err(), "{name}: 前の版の写しから作り直せてしまう");
-            }
-        }
+        std::fs::read_to_string(path).expect("前の版のゴールデン")
+    };
+    let err = ron::from_str::<GameSnapshot>(&read("snapshot_rules2.ron")).expect_err("形式 1");
+    assert!(err.to_string().contains("born_level"), "{err}");
+    for (name, rules) in [("snapshot_rules3.ron", 3), ("snapshot_rules4.ron", 4)] {
+        let s: GameSnapshot = ron::from_str(&read(name)).expect("形式 2 は読める");
+        let r = Game::restore(std::sync::Arc::new(tm_core::BalanceTable::builtin()), &s);
+        assert_eq!(
+            r.map(|_| ()),
+            Err(tm_core::SnapshotError::RulesVersion { found: rules }),
+            "{name}"
+        );
     }
 }

@@ -1,7 +1,9 @@
 mod common;
 
 use common::{atlas, bundle, leak, rect, sound, valid_bundle};
-use tm_platform_api::{AssetBundle, AssetError, SoundData, SoundId, SoundKind, SpriteId};
+use tm_platform_api::{
+    AssetBundle, AssetError, SoundData, SoundId, SoundKind, SpriteAlt, SpriteId, SpriteRect,
+};
 
 #[test]
 fn valid_bundle_passes() {
@@ -29,7 +31,7 @@ fn atlas_count_must_be_one_or_two() {
 
 #[test]
 fn atlas_size_is_limited() {
-    for (w, h) in [(0, 4), (4, 0), (1025, 4), (4, 1025)] {
+    for (w, h) in [(0, 4), (4, 0), (2049, 4), (4, 2049)] {
         let bad = AssetBundle {
             atlases: leak(vec![atlas(4, 4), atlas(w, h)]),
             ..valid_bundle()
@@ -44,10 +46,87 @@ fn atlas_size_is_limited() {
         );
     }
     let max = AssetBundle {
-        atlases: leak(vec![atlas(1024, 1024)]),
+        atlases: leak(vec![atlas(2048, 2048)]),
         ..valid_bundle()
     };
     assert_eq!(max.validate(), Ok(()));
+}
+
+fn alt(id: u16, r: SpriteRect) -> SpriteAlt {
+    SpriteAlt {
+        id: SpriteId(id),
+        rect: r,
+    }
+}
+
+#[test]
+fn alt_must_be_larger_sorted_and_inside_the_atlas() {
+    let ok = AssetBundle {
+        alt: leak(vec![
+            alt(0, rect(0, 4, 4, 4, 4)),
+            alt(1, rect(0, 8, 8, 8, 8)),
+        ]),
+        ..valid_bundle()
+    };
+    assert_eq!(ok.validate(), Ok(()));
+    for (bad, id) in [
+        (vec![alt(2, rect(0, 4, 4, 4, 4))], 2),
+        (
+            vec![alt(1, rect(0, 8, 8, 8, 8)), alt(0, rect(0, 4, 4, 4, 4))],
+            0,
+        ),
+        (
+            vec![alt(0, rect(0, 4, 4, 4, 4)), alt(0, rect(0, 8, 8, 4, 4))],
+            0,
+        ),
+        (vec![alt(1, rect(0, 4, 4, 4, 8))], 1),
+    ] {
+        let b = AssetBundle {
+            alt: leak(bad),
+            ..valid_bundle()
+        };
+        assert_eq!(
+            b.validate(),
+            Err(AssetError::SpriteAlt {
+                sprite: SpriteId(id)
+            })
+        );
+    }
+    let outside = AssetBundle {
+        alt: leak(vec![alt(0, rect(0, 14, 0, 4, 4))]),
+        ..valid_bundle()
+    };
+    assert_eq!(
+        outside.validate(),
+        Err(AssetError::SpriteOutOfAtlas {
+            sprite: SpriteId(0)
+        })
+    );
+}
+
+#[test]
+fn source_rect_uses_the_alt_from_one_and_a_half_times_in_both_axes() {
+    let b = AssetBundle {
+        alt: leak(vec![alt(1, rect(0, 8, 8, 8, 8))]),
+        ..valid_bundle()
+    };
+    let base = rect(0, 2, 0, 4, 4);
+    let big = rect(0, 8, 8, 8, 8);
+    assert_eq!(b.source_rect(SpriteId(1), 4, 4), Some(base));
+    assert_eq!(b.source_rect(SpriteId(1), 5, 6), Some(base));
+    assert_eq!(b.source_rect(SpriteId(1), 6, 6), Some(big));
+    assert_eq!(
+        b.source_rect(SpriteId(1), 100, 5),
+        Some(base),
+        "縦が足りない"
+    );
+    assert_eq!(b.source_rect(SpriteId(1), 8, 8), Some(big));
+    assert_eq!(
+        b.source_rect(SpriteId(0), 100, 100),
+        Some(rect(0, 0, 0, 2, 2)),
+        "大きい版がない"
+    );
+    assert_eq!(b.source_rect(SpriteId(9), 4, 4), None);
 }
 
 #[test]

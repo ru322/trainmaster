@@ -1,7 +1,7 @@
 Sprites(
     tile: 16,
     sprites: [
-        (name: "fx_sparkle", pivot: (4, 4), tint: true, anim: (frame_ms: 100, looping: false),
+        (name: "fx_sparkle", scale: 2, pivot: (4, 4), tint: true, anim: (frame_ms: 100, looping: false),
          frames: [
             Pixels([
                 "........",
@@ -45,21 +45,20 @@ Sprites(
             ]),
          ]),
         (name: "fx_arrow_down",
+         alt: true,
          pivot: (5, 8),
-         source: Pixels([
-                "...KKKKK...",
-                "...KyyyK...",
-                "...KyyyK...",
-                "KKKKyyyKKKK",
-                ".KyyyyyyyK.",
-                "..KyyyyyK..",
-                "...KyyyK...",
-                "....KKK....",
+         source: Shapes(w: 11, h: 8, paint: [
+                Rect(x: 3.25, y: 0.25, w: 4.5, h: 4.25, r: 0.5, color: "outline"),
+                Poly(pts: [(0.25, 3.25), (10.75, 3.25), (5.5, 7.875)], color: "outline"),
+                Rect(x: 4, y: 1, w: 3, h: 3.5, r: 0.25, color: "highlight"),
+                Poly(pts: [(2.25, 4), (8.75, 4), (5.5, 6.875)], color: "highlight"),
             ])),
         (name: "fx_arrow_up",
+         alt: true,
          pivot: (5, 0),
          source: Derive(from: "fx_arrow_down", op: FlipY)),
         (name: "fx_dot",
+         scale: 2,
          pivot: (4, 4),
          tint: true,
          source: Pixels([

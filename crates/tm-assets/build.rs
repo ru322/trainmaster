@@ -8,7 +8,7 @@ use std::io::BufReader;
 use std::path::{Path, PathBuf};
 
 const MAX_PAGES: usize = 2;
-const MAX_SIZE: u32 = 1024;
+const MAX_SIZE: u32 = 2048;
 
 struct Strip {
     page: u8,

@@ -7,7 +7,7 @@ use crate::audio::{SoundData, SoundId, SoundKind};
 use crate::draw::SpriteId;
 
 const MAX_ATLASES: usize = 2;
-const MAX_ATLAS_SIZE: u32 = 1024;
+const MAX_ATLAS_SIZE: u32 = 2048;
 const PREFAULT_STRIDE_SAMPLES: usize = 4096 / size_of::<i16>();
 
 /// アトラスのページ。RGBA はストレートアルファで、バイトの並びは R, G, B, A。
@@ -47,6 +47,11 @@ pub struct SpriteRect {
 }
 
 impl SpriteRect {
+    /// 描き先の大きさ `(w, h)`(描画の画素)が、縦横ともこの矩形の 1.5 倍以上か。大きい版(`SpriteAlt`)を使う目安。
+    pub fn is_magnified_by(&self, w: u64, h: u64) -> bool {
+        2 * w >= 3 * u64::from(self.w) && 2 * h >= 3 * u64::from(self.h)
+    }
+
     /// 表の未使用の枠に置くゼロ値。`validate` は空の矩形として拒否する。
     pub const ZERO: SpriteRect = SpriteRect {
         atlas: 0,
@@ -57,6 +62,15 @@ impl SpriteRect {
     };
 }
 
+/// スプライトの大きい版(2 倍に描くとき用の、縦横 2 倍の画素の絵)。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SpriteAlt {
+    /// 元のスプライト。
+    pub id: SpriteId,
+    /// 大きい版のアトラス上の位置。
+    pub rect: SpriteRect,
+}
+
 /// データの誤り。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AssetError {
@@ -65,7 +79,7 @@ pub enum AssetError {
         /// 枚数。
         count: usize,
     },
-    /// アトラスの幅か高さが 0、または 1024 を超える。
+    /// アトラスの幅か高さが 0、または 2048 を超える。
     AtlasSize {
         /// アトラスの番号。
         atlas: u8,
@@ -90,6 +104,11 @@ pub enum AssetError {
     },
     /// 幅か高さが 0 のスプライト。
     SpriteEmpty {
+        /// 該当のスプライト。
+        sprite: SpriteId,
+    },
+    /// 大きい版の元の番号が範囲外、昇順でない、または矩形が元より大きくない。
+    SpriteAlt {
         /// 該当のスプライト。
         sprite: SpriteId,
     },
@@ -130,10 +149,12 @@ pub enum AssetError {
 /// 実行ファイルに埋め込んだ画像と音のデータへの参照の束。
 #[derive(Clone, Copy)]
 pub struct AssetBundle {
-    /// アトラスのページ。1024 × 1024 以下で 2 枚まで [02 D18]。
+    /// アトラスのページ。2048 × 2048 以下で 2 枚まで。
     pub atlases: &'static [AtlasImage],
-    /// `SpriteId` の番号順のスプライトの位置。
+    /// `SpriteId` の番号順のスプライトの位置。画素は描画の解像度(論理 1px = `RENDER_SCALE` 画素)の絵。
     pub sprites: &'static [SpriteRect],
+    /// 大きい版。`id` の昇順で、1 つの `id` に 1 つまで。
+    pub alt: &'static [SpriteAlt],
     /// `SoundId` の番号順の音。
     pub sounds: &'static [SoundData],
     /// 白・不透明の画素のスプライト。矩形と線の描画に使う。
@@ -145,6 +166,7 @@ impl fmt::Debug for AssetBundle {
         f.debug_struct("AssetBundle")
             .field("atlases", &self.atlases)
             .field("sprites", &self.sprites.len())
+            .field("alt", &self.alt.len())
             .field("sounds", &self.sounds.len())
             .field("white", &self.white)
             .finish()
@@ -157,6 +179,19 @@ impl AssetBundle {
         self.validate_atlases()?;
         self.validate_sprites()?;
         self.validate_sounds()
+    }
+
+    /// `id` を描き先の大きさ `(w, h)`(描画の画素)で描くときのアトラス上の位置。縦横とも元の 1.5 倍以上に描くときは大きい版。
+    pub fn source_rect(&self, id: SpriteId, w: u64, h: u64) -> Option<SpriteRect> {
+        let base = *self.sprites.get(usize::from(id.0))?;
+        if !base.is_magnified_by(w, h) {
+            return Some(base);
+        }
+        Some(
+            self.alt
+                .binary_search_by_key(&id, |a| a.id)
+                .map_or(base, |i| self.alt[i].rect),
+        )
     }
 
     /// 音のサンプル列を 4096 バイトごとに 1 バイト読み、ページインを済ませる。読んだ値の合計を返す。
@@ -218,6 +253,26 @@ impl AssetBundle {
         }
         if usize::from(self.white.0) >= count {
             return Err(AssetError::SpriteOutOfAtlas { sprite: self.white });
+        }
+        let mut previous: Option<SpriteId> = None;
+        for alt in self.alt {
+            let sprite = alt.id;
+            let Some(base) = self.sprites.get(usize::from(sprite.0)) else {
+                return Err(AssetError::SpriteAlt { sprite });
+            };
+            if previous.is_some_and(|p| p >= sprite) || alt.rect.w <= base.w || alt.rect.h <= base.h
+            {
+                return Err(AssetError::SpriteAlt { sprite });
+            }
+            previous = Some(sprite);
+            let Some(atlas) = self.atlases.get(usize::from(alt.rect.atlas)) else {
+                return Err(AssetError::SpriteOutOfAtlas { sprite });
+            };
+            let right = u32::from(alt.rect.x) + u32::from(alt.rect.w);
+            let bottom = u32::from(alt.rect.y) + u32::from(alt.rect.h);
+            if right > atlas.width || bottom > atlas.height {
+                return Err(AssetError::SpriteOutOfAtlas { sprite });
+            }
         }
         Ok(())
     }

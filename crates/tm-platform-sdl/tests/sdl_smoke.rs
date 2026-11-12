@@ -58,6 +58,7 @@ static SOUNDS: [SoundData; 2] = [
 static BUNDLE: AssetBundle = AssetBundle {
     atlases: &ATLASES,
     sprites: &SPRITES,
+    alt: &[],
     sounds: &SOUNDS,
     white: SpriteId(0),
 };
@@ -173,8 +174,9 @@ fn scene(layer: [DrawCmd; 5]) -> DrawList {
     DrawList { cmds }
 }
 
+/// 論理の画素 `(x, y)` の中心の色(フレームは描画の解像度 1920×1080)。
 fn px(frame: &[u8], x: usize, y: usize) -> Color {
-    let i = (y * 640 + x) * 4;
+    let i = ((3 * y + 1) * 1920 + 3 * x + 1) * 4;
     rgba(frame[i], frame[i + 1], frame[i + 2], frame[i + 3])
 }
 
@@ -188,7 +190,7 @@ fn assert_px(frame: &[u8], x: usize, y: usize, want: Color) {
 }
 
 fn check_scene(frame: &[u8]) {
-    assert_eq!(frame.len(), 640 * 360 * 4);
+    assert_eq!(frame.len(), 1920 * 1080 * 4);
     assert_px(frame, 0, 0, BG);
     assert_px(frame, 639, 359, BG);
     assert_px(frame, 10, 10, RED);
@@ -475,6 +477,7 @@ fn invalid_bundle_is_rejected() {
     static BAD: AssetBundle = AssetBundle {
         atlases: &ATLASES,
         sprites: &SPRITES,
+        alt: &[],
         sounds: &SOUNDS,
         white: SpriteId(2),
     };

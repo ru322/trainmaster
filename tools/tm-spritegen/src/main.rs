@@ -110,8 +110,18 @@ fn run(args: &[String]) -> Result<(), String> {
         "report" => {
             let g = generate_from(&o).map_err(|e| e.to_string())?;
             let pixels: u32 = g.sprites.iter().map(|s| s.image.w * s.image.h).sum();
-            println!("スプライト: {}", g.sprites.len());
-            println!("画素: {pixels}");
+            let alt: u32 = g
+                .sprites
+                .iter()
+                .filter_map(|s| s.alt.as_ref())
+                .map(|a| a.w * a.h)
+                .sum();
+            println!(
+                "スプライト: {}(大きい版 {})",
+                g.sprites.len(),
+                g.sprites.iter().filter(|s| s.alt.is_some()).count()
+            );
+            println!("画素: {pixels}(大きい版 {alt})");
             println!("帯の使用: {}/{} 行", g.rows_used, g.strip.height);
             println!("パレット: {}/32 色", g.colors);
             println!("PNG: {} バイト", g.png.len());

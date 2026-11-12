@@ -5,10 +5,10 @@ use tm_platform_api::{DrawCmd, Rect};
 
 /// 層の数(`LayerId(0..=3)`)。
 pub(crate) const LAYER_COUNT: usize = 4;
-/// 1 層の幅と高さの上限。
-pub(crate) const LAYER_MAX_DIM: u32 = 1024;
-/// 全層のテクスチャの合計の上限(バイト)。
-pub(crate) const LAYER_BUDGET_BYTES: u64 = 4 * 1024 * 1024;
+/// 1 層のテクスチャの幅と高さの上限(描画の画素。VideoCore IV のテクスチャの上限)。
+pub(crate) const LAYER_MAX_DIM: u32 = 2048;
+/// 全層のテクスチャの合計の上限(バイト)。マップの層 2 枚(1920×1728 ずつ、26.5MiB)が入る。
+pub(crate) const LAYER_BUDGET_BYTES: u64 = 32 * 1024 * 1024;
 
 /// このフレームの層の区間。`begin` と `end` は Begin と End の添字。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -27,7 +27,7 @@ pub(crate) enum LayerUse {
     Inline(Section),
 }
 
-/// 層のテクスチャと、最後に描いた revision。
+/// 層のテクスチャ(描画の画素。論理の大きさの `RENDER_SCALE` 倍)と、最後に描いた revision。
 pub(crate) struct LayerSlot<'tc> {
     pub(crate) tex: Texture<'tc>,
     pub(crate) w: u32,

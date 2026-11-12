@@ -1,5 +1,6 @@
 Sprites(
     tile: 16,
+    scale: 2,
     sprites: [
         (name: "trk_rail_f_e",
          source: Proc(TrackHalf(dir: E, part: RailFill))),

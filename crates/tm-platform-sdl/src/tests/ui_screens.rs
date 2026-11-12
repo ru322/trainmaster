@@ -102,6 +102,10 @@ fn parse_line(line: &str, names: &BTreeMap<&'static str, SpriteId>) -> Option<Dr
                 h: r.h,
             }
         }
+        ("Quad", [a, b, c, d, col]) => DrawCmd::Quad {
+            pts: [pair(a, ',')?, pair(b, ',')?, pair(c, ',')?, pair(d, ',')?],
+            color: color(col)?,
+        },
         ("EndLayer", [""]) => DrawCmd::EndCachedLayer,
         ("DrawLayer", [l]) => DrawCmd::DrawCachedLayer {
             layer: LayerId(l.parse().ok()?),

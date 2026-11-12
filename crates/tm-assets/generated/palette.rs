@@ -15,3 +15,5 @@ pub const PAL_BLUE: Color = Color { r: 59, g: 111, b: 214, a: 255 };
 pub const PAL_GREEN: Color = Color { r: 31, g: 122, b: 61, a: 255 };
 pub const PAL_SHADOW: Color = Color { r: 0, g: 0, b: 0, a: 96 };
 pub const PAL_ACCENT: Color = Color { r: 230, g: 159, b: 0, a: 255 };
+pub const PAL_GLASS: Color = Color { r: 156, g: 203, b: 235, a: 255 };
+pub const PAL_DARK: Color = Color { r: 46, g: 46, b: 54, a: 255 };

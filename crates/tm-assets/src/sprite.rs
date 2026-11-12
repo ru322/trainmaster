@@ -57,7 +57,7 @@ pub struct NineSlice {
 mod generated {
     use super::{Anim, NineSlice, SpriteMeta};
     use crate::atlas::StripInfo;
-    use tm_platform_api::{SpriteId, SpriteRect};
+    use tm_platform_api::{SpriteAlt, SpriteId, SpriteRect};
 
     include!(concat!(env!("CARGO_MANIFEST_DIR"), "/generated/sprites.rs"));
 }

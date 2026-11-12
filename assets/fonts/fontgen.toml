@@ -16,6 +16,7 @@ id = "Head16"
 size_px = 16
 line_height = 20
 contrast = 0
+alt_keys = ["notice.goal"]   # ゴールの文字は 2 倍で描くので、2 倍の字形も作る
 
 [charset]
 ranges = [

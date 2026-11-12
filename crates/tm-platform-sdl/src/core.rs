@@ -13,6 +13,8 @@ const WINDOW_TITLE: &str = "Train Master";
 /// SDL の初期化の前半(14 §3.2 の手順 1〜4 と 6)。`TextureCreator` を作る。
 pub struct SdlCore {
     pub(crate) canvas: Canvas<Window>,
+    /// ビデオのドライバが KMSDRM(実機)。
+    pub(crate) kmsdrm: bool,
     pub(crate) event_pump: EventPump,
     pub(crate) pads: Option<(GameControllerSubsystem, JoystickSubsystem)>,
     pub(crate) sdl: Sdl,
@@ -54,6 +56,7 @@ impl SdlCore {
         );
         Ok(SdlCore {
             canvas,
+            kmsdrm: driver.eq_ignore_ascii_case("kmsdrm"),
             event_pump,
             pads,
             sdl,
@@ -66,10 +69,14 @@ impl SdlCore {
     }
 }
 
+/// `Auto` を決める: 画面のない `dummy` と `offscreen` は 1280×720 のウィンドウ、それ以外(KMSDRM、X11、Wayland など)はフルスクリーン。
 pub(crate) fn resolve_display(mode: DisplayMode, video_driver: &str) -> DisplayMode {
+    let headless = ["dummy", "offscreen", "evdev"]
+        .iter()
+        .any(|d| video_driver.eq_ignore_ascii_case(d));
     match mode {
-        DisplayMode::Auto if video_driver.eq_ignore_ascii_case("kmsdrm") => DisplayMode::Fullscreen,
-        DisplayMode::Auto => DisplayMode::Windowed { scale: 2 },
+        DisplayMode::Auto if headless => DisplayMode::Windowed { scale: 2 },
+        DisplayMode::Auto => DisplayMode::Fullscreen,
         other => other,
     }
 }

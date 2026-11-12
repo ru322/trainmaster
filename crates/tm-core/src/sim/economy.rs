@@ -33,8 +33,8 @@ pub(crate) struct TargetState {
     pub limit: Level,
     /// `limit` を決めた制約(SIM-D-14)。
     pub kind: LimitKind,
-    /// 値段の下限のレベル(あとから出た駅・路線。M8)。これより下のレベルはこのレベルの値段。
-    pub floor: Level,
+    /// 駅・路線が生まれた会社レベル(値段の下限。M8、M10)。
+    pub born: CompanyLevel,
 }
 
 const TARGET_CAP: usize = 255;
@@ -54,7 +54,7 @@ impl TargetBuf {
             cur: Level::ZERO,
             limit: Level::ZERO,
             kind: LimitKind::Intrinsic,
-            floor: Level::ZERO,
+            born: CompanyLevel::ZERO,
         };
         TargetBuf {
             len: 0,
@@ -160,7 +160,7 @@ fn plan(
         let mut step_cost = Money::ZERO;
         let mut n = 0u32;
         for t in tg.as_slice().iter().filter(|t| t.cur < t.limit) {
-            step_cost = step_cost.saturating_add(bal.cost(p, t.cur.max(t.floor)));
+            step_cost = step_cost.saturating_add(bal.upgrade_cost(p, t.cur, t.born));
             n += 1;
         }
         if n == 0 {
@@ -282,7 +282,7 @@ fn collect_targets(
                 st.company.line_slots,
                 limit,
                 limit_kind(bal, p, limit, None),
-                Level::ZERO,
+                CompanyLevel::ZERO,
             ));
         }
     }
@@ -297,7 +297,7 @@ fn target_state(
     level: Level,
     limit: Level,
     kind: LimitKind,
-    floor: Level,
+    born: CompanyLevel,
 ) -> TargetState {
     TargetState {
         target,
@@ -305,7 +305,7 @@ fn target_state(
         cur: level,
         limit,
         kind,
-        floor,
+        born,
     }
 }
 
@@ -324,7 +324,7 @@ fn station_target(bal: &BalanceTable, p: ParamKey, s: &Station, c: CompanyLevel)
         level,
         limit,
         kind,
-        bal.floor_level(p, bal.station_born_level(s.id)),
+        bal.station_born_level(s.id),
     )
 }
 
@@ -358,7 +358,7 @@ fn line_target(
         level,
         limit,
         limit_kind(bal, p, limit, by_platform),
-        bal.floor_level(p, line.born_level),
+        line.born_level,
     )
 }
 

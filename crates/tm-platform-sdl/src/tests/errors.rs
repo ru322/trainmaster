@@ -4,8 +4,8 @@ use sdl2::event::Event;
 use tm_platform_api::{DrawCmd, DrawList, LayerId, Platform, PlatformError};
 
 use super::{
-    MODES, assert_same, config, count_logs, fill, rgba, sdl_frame, soft_frame, take_logs,
-    test_assets, with_platform,
+    MODES, assert_same, config, count_logs, fill, path_config, rgba, sdl_frame, set_path,
+    soft_frame, take_logs, test_assets, with_platform,
 };
 use crate::config::BatchMode;
 
@@ -70,9 +70,9 @@ fn failed_layer_redraw_is_retried_next_frame() {
 #[test]
 fn layer_that_cannot_be_recreated_is_drawn_inline() {
     with_platform(&config(BatchMode::Geometry), test_assets(), |p| {
-        p.renderer_mut().set_max_tex((16, 16));
+        p.renderer_mut().set_max_tex((48, 48));
         p.present(&layer(1, 16)).unwrap();
-        assert_eq!(p.renderer_mut().layer_size(0), Some((16, 8)));
+        assert_eq!(p.renderer_mut().layer_size(0), Some((48, 24)));
         for _ in 0..3 {
             let list = layer(1, 17);
             p.present(&list).unwrap();
@@ -100,7 +100,12 @@ fn device_reset_without_render_targets_falls_back_to_direct_mode() {
         p.handle_event(Event::RenderDeviceReset { timestamp: 0 }, &mut Vec::new());
         assert!(p.renderer_mut().is_direct());
         let logs = take_logs();
-        assert_eq!(count_logs(&logs, "直接描画モード"), 1, "{logs:?}");
+        assert_eq!(
+            count_logs(&logs, "レンダーターゲットに対応していない"),
+            1,
+            "{logs:?}"
+        );
+        p.canvas_mut().window_mut().set_size(1920, 1080).unwrap();
         for _ in 0..2 {
             p.present(&list).unwrap();
             let got = p.capture_frame().unwrap();
@@ -175,18 +180,21 @@ fn malformed() -> Vec<(&'static str, Vec<DrawCmd>, bool)> {
 
 #[test]
 fn malformed_layers_are_ignored_like_soft_raster() {
-    for (batch, direct) in MODES {
-        with_platform(&config(batch), test_assets(), |p| {
-            if direct {
-                p.force_direct();
-            }
+    for (batch, path) in MODES {
+        with_platform(&path_config(batch, path), test_assets(), |p| {
+            set_path(p, path);
             for (name, cmds, broken) in malformed() {
                 let list = DrawList { cmds };
                 let r = p.draw_only(&list);
                 assert!(r.bad_layer, "{name}");
                 assert_eq!(r.broken_layer, broken, "{name}");
                 let got = sdl_frame(p, &list);
-                assert_same(&got, &soft_frame(test_assets(), &list), direct, name);
+                assert_same(
+                    &got,
+                    &soft_frame(test_assets(), &list),
+                    path.rgb_only(),
+                    name,
+                );
             }
         });
     }
@@ -232,7 +240,7 @@ fn failed_layer_texture_is_not_retried_until_the_size_changes() {
         assert_eq!(p.stats().layer_redraws, 0);
         assert_eq!(count_logs(&take_logs(), "その場描き"), 1);
         p.present(&layer(1, 17)).unwrap();
-        assert_eq!(p.renderer_mut().layer_size(0), Some((17, 8)));
+        assert_eq!(p.renderer_mut().layer_size(0), Some((51, 24)));
         p.renderer_mut().inject.layer_tex = true;
         p.present(&layer(1, 16)).unwrap();
         p.renderer_mut().inject.layer_tex = false;
@@ -240,7 +248,7 @@ fn failed_layer_texture_is_not_retried_until_the_size_changes() {
         p.present(&layer(1, 16)).unwrap();
         assert_eq!(
             p.renderer_mut().layer_size(0),
-            Some((16, 8)),
+            Some((48, 24)),
             "リセットで試し直す"
         );
     });
