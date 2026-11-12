@@ -40,6 +40,8 @@ struct Scripted<P> {
     frame: u64,
     script: Vec<(u64, PhysicalInput)>,
     audio: Vec<(u64, AudioCmd)>,
+    /// 各フレームを出した時刻(`frame` 番めを出した時刻が `times[frame - 1]`)。
+    times: Vec<MonoTime>,
 }
 
 impl<P: Platform> Platform for Scripted<P> {
@@ -60,6 +62,7 @@ impl<P: Platform> Platform for Scripted<P> {
     }
     fn present(&mut self, frame: &DrawList) -> Result<(), PlatformError> {
         self.frame += 1;
+        self.times.push(self.inner.now());
         self.inner.present(frame)
     }
     fn audio(&mut self, cmds: &[AudioCmd]) {
@@ -88,6 +91,7 @@ fn app_t_23_sdl_smoke() {
             (81, PhysicalInput::KeyUp(Key::Escape)),
         ],
         audio: Vec::new(),
+        times: Vec::new(),
     };
     let app_cfg = AppConfig {
         seed: SeedPolicy::Fixed(1),
@@ -144,6 +148,7 @@ fn app_t_30_sdl_quit_game_from_settings() {
         frame: 0,
         script,
         audio: Vec::new(),
+        times: Vec::new(),
     };
     let store = MemStore::new();
     let settings = Settings {
@@ -170,8 +175,15 @@ fn app_t_30_sdl_quit_game_from_settings() {
         p.audio.iter().all(|(f, _)| *f <= 190),
         "終了中は音の命令を出さない"
     );
-    let after = p.frame - 190;
-    assert!((90..300).contains(&after), "電源の箱の 1500ms: {after}");
+    // フレームの速さは実行する機械で変わるので、フレーム数ではなく時間で見る(1500ms 以上、かつ止まらずに終わる)。
+    let start = p.times[189];
+    let end = *p.times.last().expect("frames");
+    let after_ms = end.saturating_since(start) / 1_000;
+    assert!(p.frame > 190, "電源の箱のあいだも描く");
+    assert!(
+        (1_500..6_000).contains(&after_ms),
+        "電源の箱の 1500ms: {after_ms}ms"
+    );
     let ticks: Vec<u64> = store.history().iter().filter_map(|w| w.tick).collect();
     assert!(ticks.last().is_some_and(|&t| t > 0), "{ticks:?}");
     drop(p);
