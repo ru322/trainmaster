@@ -11,6 +11,7 @@ use common::{Rig, SEED_A, TITLE_READY_FRAME, config, newest, saving, wait_saved}
 use log::LevelFilter;
 use tm_app::save::{SaveFile, SaveHeader, WriteStage, body_fnv};
 use tm_app::{App, AppConfig, FsStore, MemStore, SavePolicy, SaveStore, SeedPolicy, Slot};
+use tm_assets::txt;
 use tm_core::{
     BalanceTable, BuyMode, Command, Game, GameConfig, GameView, LineEnd, LineId, ParamKey,
     ParamOwner, StationId, Tick, UpgradeScope,
@@ -422,9 +423,11 @@ fn app_t_31_a_panicking_writer_stops_saving() {
     );
 }
 
+/// 終わる確認の 1 回目を開いた画面に描かれた文字(並びのまま)。
 fn quit_confirm_text(cfg: AppConfig) -> String {
     let mut r = Rig::new(HeadlessClock::Exact60, cfg);
     r.start_game();
+    r.disable_explanations();
     r.tap(Key::Escape);
     for _ in 0..6 {
         r.tap(Key::Down);
@@ -432,6 +435,17 @@ fn quit_confirm_text(cfg: AppConfig) -> String {
     r.tap(Key::Up);
     r.tap(Key::Z);
     draw_text(r.app.draw_list())
+        .lines()
+        .filter_map(|l| l.strip_prefix("Sprite '")?.chars().next())
+        .collect()
+}
+
+fn shows(drawn: &str, id: tm_assets::text::TextId) -> bool {
+    let want: String = tm_assets::text::text(id)
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect();
+    drawn.contains(&want)
 }
 
 #[test]
@@ -466,7 +480,14 @@ fn app_t_31_save_off() {
 
     let off = quit_confirm_text(cfg);
     let on = quit_confirm_text(saving(SeedPolicy::Fixed(SEED_A), &MemStore::new()));
-    assert_ne!(off, on, "保存しないときは終わる確認の文が変わる");
+    assert!(
+        shows(&off, txt::QUIT_CONFIRM1_NOSAVE) && !shows(&off, txt::QUIT_CONFIRM1),
+        "保存しないときは終わる確認の文が変わる: {off}"
+    );
+    assert!(
+        shows(&on, txt::QUIT_CONFIRM1) && !shows(&on, txt::QUIT_CONFIRM1_NOSAVE),
+        "保存するときの終わる確認の文: {on}"
+    );
     fs::remove_file(&file).unwrap();
 }
 
