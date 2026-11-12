@@ -34,13 +34,11 @@ done
 
 tag=$(git -C "$root" describe --tags --always --dirty)
 commit=$(git -C "$root" rev-parse HEAD)
-# 同じ版からビルドしたかを確かめる。最後にインストールされた trainmaster のビルドディレクトリの名前(TRAINMASTER_VERSION)が
-# 今の版と完全に一致し、実行ファイルにもその版(TM_BUILD_VERSION)が埋め込まれていること
 last_installed=$(find "$out/build" -maxdepth 2 -path "$out/build/trainmaster-*/.stamp_target_installed" -printf '%T@ %h\n' |
   sort -n | tail -n 1 | cut -d ' ' -f 2-)
 [[ $last_installed == "$out/build/trainmaster-$tag" ]] ||
   ng "the last installed trainmaster is '${last_installed##*/}', not trainmaster-$tag (run mise run br:rebuild-app)"
-grep -aqF -- "$tag" "$bin" || ng "$bin does not contain the version $tag (run mise run br:rebuild-app)"
+grep -aqF -- "TM_GAME_VERSION=$tag" "$bin" || ng "$bin does not contain the version $tag (run mise run br:rebuild-app)"
 os_release=$out/target/usr/lib/os-release
 br_version=$(sed -n 's/^VERSION_ID=//p' "$os_release")
 [[ -n $br_version ]] || ng "no VERSION_ID in $os_release"
