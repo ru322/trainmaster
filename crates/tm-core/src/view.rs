@@ -4,9 +4,10 @@ use crate::balance::BalanceTable;
 use crate::command::{Command, CommandError, CommandPreview, LineEnd};
 use crate::game::Game;
 use crate::geom::{Bend, Dir8, GridPos, MapPoint, TrackMask, TrackSegment};
-use crate::ids::{CompanyLevel, Level, LineId, StationId, TrainId};
+use crate::ids::{CompanyLevel, EvolutionId, Level, LineId, StationId, TrainId};
 use crate::param::{Feature, FeatureSet, LineLevels, ParamKey, StationLevels};
 use crate::recommend::Recommendation;
+use crate::reincarnation::{self, ReincarnationBonuses, ReincarnationRules, ReincarnationState};
 use crate::sim;
 use crate::state::{Direction, GameState, Line, Station, Train, TrainPhase, lay_track};
 use crate::time::{POS_UNITS_PER_TILE, Tick, Ticks};
@@ -112,6 +113,26 @@ impl<'a> GameView<'a> {
     /// ゴールに届いたか。
     pub fn goal_reached(&self) -> bool {
         self.st().progress.goal_reached
+    }
+
+    /// 転生の状態と、いまの会社での効果。
+    pub fn reincarnation(&self) -> ReincarnationView<'a> {
+        let plan = reincarnation::plan_reincarnate(
+            self.st(),
+            &self.game.reincarnation,
+            &self.game.reincarnation_rules,
+        );
+        ReincarnationView {
+            souls: self.game.reincarnation.souls,
+            lifetime_souls: self.game.reincarnation.lifetime_souls,
+            spent_souls: self.game.reincarnation.spent_souls,
+            rebirths: self.game.reincarnation.rebirths,
+            souls_on_rebirth: plan.as_ref().map_or(0, |p| p.souls),
+            can_reincarnate: plan.is_ok(),
+            bonuses: self.st().bonuses,
+            rules: &self.game.reincarnation_rules,
+            state: &self.game.reincarnation,
+        }
     }
 
     /// マップのマス数 (幅, 高さ)。
@@ -251,14 +272,14 @@ impl<'a> GameView<'a> {
             waiting: s.waiting_total,
             capacity: bal.station_capacity(s.levels.capacity),
             spawn_per_sec: if spawns {
-                spawn_per_sec(
+                st.bonuses.spawn_rate(spawn_per_sec(
                     bal.spawn_rate(s.levels.spawn),
                     sim::max_stopping_attractiveness(st, bal, s.id),
-                )
+                ))
             } else {
                 MilliPeople::ZERO
             },
-            fare: bal.fare(s.levels.fare),
+            fare: st.bonuses.fare_income(bal.fare(s.levels.fare)),
             platform: bal.platform(s.levels.platform),
             lines: &s.serving_lines,
             born_level: bal.station_born_level(s.id),
@@ -398,6 +419,47 @@ pub struct CompanyView {
     pub gauge: GaugeView,
     /// 出現済みの駅の数。
     pub station_count: u32,
+}
+
+/// 転生の表示用の値。
+#[derive(Clone, Copy, Debug)]
+pub struct ReincarnationView<'a> {
+    /// 残っている魂。
+    pub souls: u64,
+    /// これまでもらった魂の合計。
+    pub lifetime_souls: u64,
+    /// これまで進化に使った魂の合計。
+    pub spent_souls: u64,
+    /// 転生した回数。
+    pub rebirths: u32,
+    /// いま転生したら得る魂。
+    pub souls_on_rebirth: u64,
+    /// いま転生できるか。
+    pub can_reincarnate: bool,
+    /// いまの会社に効いている進化の効果。
+    pub bonuses: ReincarnationBonuses,
+    /// 進化の設定。
+    pub rules: &'a ReincarnationRules,
+    /// 残っている魂と進化の状態。
+    pub state: &'a ReincarnationState,
+}
+
+impl ReincarnationView<'_> {
+    /// 進化のレベル。
+    pub fn level(&self, id: EvolutionId) -> u8 {
+        self.state.level(id)
+    }
+
+    /// 進化を 1 レベル上げるのに要る魂。上げられなければ理由。
+    pub fn unlock_cost(&self, id: EvolutionId) -> Result<u64, CommandError> {
+        reincarnation::plan_unlock(self.state, self.rules, id)
+    }
+
+    /// その段階が解放済みか。
+    pub fn tier_unlocked(&self, tier: u8) -> bool {
+        self.rules
+            .tier_unlocked(tier, self.rebirths, self.lifetime_souls)
+    }
 }
 
 /// 会社ゲージ [01 §5.1]。

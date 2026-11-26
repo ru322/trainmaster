@@ -59,12 +59,26 @@
   - 説明(チュートリアル)を充実させる
   - 文章はわかりやすくする
 
+## 転生システム
+
+- `config/reincarnation.toml` で設定する
+  - 転生できる累計収入・会社レベル
+  - 転生で得る魂(soul)の式
+  - 進化の段階(tier)の解放条件
+  - 進化のノード(値段・最大レベル・前提・効果)
+- ビルドにはこのファイルを埋め込む。`TM_REINCARNATION_FILE=/path/to/reincarnation.toml` で差し替えられる
+- 会社のお金・駅・路線・列車は転生でやり直しになり、魂・解放した進化・転生回数だけが残る
+- 進化の効果は運賃収入・お客さんの発生・強化の値段・線路の値段・転生で得る魂・転生後の所持金に効く
+
 ## 技術
 
 - Buildroot
 - SDL2
 - rust
   - 必要に応じて C/C++ を使うが使わないほうが好ましい.使うなら最小限に
+- Nix(`flake.nix` の `nix develop`。Rust 1.88.0・SDL2・Buildroot のホスト道具)
+  - `nix develop` で devshell に入る。`rustc`/`cargo`/`SDL2`/`mise` がそろう
+  - mise も devshell に入るので `mise run test` などはそのまま使える
 
 ## 備考
 

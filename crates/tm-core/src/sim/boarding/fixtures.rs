@@ -71,6 +71,7 @@ pub(crate) fn state(
             purchases: 0,
         },
         rng: RngStreams::new(SEED),
+        bonuses: Default::default(),
         routing: Routing::default(),
         map_revision: 0,
         #[cfg(feature = "test-support")]

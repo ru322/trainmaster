@@ -7,6 +7,8 @@ use rand_chacha::rand_core::{Rng, SeedableRng};
 pub(crate) const STREAM_STATION_SPAWN: u64 = 1;
 /// 乗客の目的駅。
 pub(crate) const STREAM_PASSENGER_DEST: u64 = 2;
+/// 転生の次のシード。
+pub(crate) const STREAM_REBIRTH: u64 = 3;
 
 /// 1 つの用途のストリーム。`words` は取り出した 32 ビット語の数(state_hash に入る)。
 #[derive(Clone, Debug, PartialEq, Eq)]

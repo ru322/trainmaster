@@ -233,7 +233,11 @@ fn app_t_27_corrupt_and_other_versions() {
         ),
         (
             "rules_version",
-            edit_header(&good, "rules_version: 5", "rules_version: 4"),
+            edit_header(
+                &good,
+                &format!("rules_version: {}", tm_core::RULES_VERSION),
+                "rules_version: 4",
+            ),
         ),
         (
             "config_hash",

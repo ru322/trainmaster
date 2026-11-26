@@ -80,10 +80,13 @@ fn replay_log(seed: u64, cfg: &AppConfig) -> ReplayLog {
 impl Session {
     fn new(seed: u64, no: u32, cfg: &AppConfig, tutorial: Tutorial, record: bool) -> Self {
         Session {
-            game: Game::new(GameConfig {
-                seed,
-                balance: cfg.balance.clone(),
-            }),
+            game: Game::new_with_reincarnation(
+                GameConfig {
+                    seed,
+                    balance: cfg.balance.clone(),
+                },
+                cfg.reincarnation.clone(),
+            ),
             tutorial,
             replay: record.then(|| replay_log(seed, cfg)),
             seed,
@@ -203,7 +206,12 @@ impl App {
         );
         let t0 = platform.now();
         let mut ui = Ui::new();
-        let (save, settings) = SaveState::open(&cfg.save, &cfg.balance, &cfg.version.game_version);
+        let (save, settings) = SaveState::open_with(
+            &cfg.save,
+            &cfg.balance,
+            &cfg.reincarnation,
+            &cfg.version.game_version,
+        );
         if let Some(s) = settings {
             ui.set_settings(s);
         }

@@ -10,7 +10,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use log::{debug, info, warn};
-use tm_core::{BalanceTable, Game};
+use tm_core::{BalanceTable, Game, ReincarnationRules};
 use tm_tutorial::Tutorial;
 use tm_ui::{Settings, Ui};
 
@@ -67,7 +67,19 @@ pub(crate) struct Scan {
 }
 
 /// ヘッダの `seq` の大きい方から `SaveFile::load` を試し、最初に通ったものを候補にする。
+/// 転生の設定は埋め込みのもの(単体テスト用)。
+#[cfg(test)]
 pub(crate) fn scan_slots(slots: &[(Slot, Vec<u8>)], balance: &Arc<BalanceTable>) -> Scan {
+    let rules = Arc::new(ReincarnationRules::builtin());
+    scan_slots_with(slots, balance, &rules)
+}
+
+/// 転生の設定を指定してスロットを調べる。
+pub(crate) fn scan_slots_with(
+    slots: &[(Slot, Vec<u8>)],
+    balance: &Arc<BalanceTable>,
+    reincarnation: &Arc<ReincarnationRules>,
+) -> Scan {
     let mut rejected = Vec::new();
     let mut heads = Vec::new();
     for (slot, bytes) in slots {
@@ -83,7 +95,7 @@ pub(crate) fn scan_slots(slots: &[(Slot, Vec<u8>)], balance: &Arc<BalanceTable>)
         if candidate.is_some() {
             break;
         }
-        match SaveFile::load(bytes, balance) {
+        match SaveFile::load_with(bytes, balance, reincarnation) {
             Ok(l) => candidate = Some((slot, l)),
             Err(e) => rejected.push((slot, e)),
         }
@@ -132,9 +144,21 @@ pub(crate) struct SaveState {
 
 impl SaveState {
     /// 起動時の 5a・5b: `settings.ron` とスロットを読み、書き込みスレッドを作る。返す設定は `ui.set_settings` に渡す。
+    #[cfg(test)]
     pub(crate) fn open(
         policy: &SavePolicy,
         balance: &Arc<BalanceTable>,
+        game_version: &str,
+    ) -> (SaveState, Option<Settings>) {
+        let rules = Arc::new(ReincarnationRules::builtin());
+        SaveState::open_with(policy, balance, &rules, game_version)
+    }
+
+    /// 転生の設定を指定して開く。
+    pub(crate) fn open_with(
+        policy: &SavePolicy,
+        balance: &Arc<BalanceTable>,
+        reincarnation: &Arc<ReincarnationRules>,
         game_version: &str,
     ) -> (SaveState, Option<Settings>) {
         let (mut store, enabled): (Box<dyn SaveStore>, bool) = match policy {
@@ -175,7 +199,7 @@ impl SaveState {
         if let Some(s) = loaded {
             state.settings = s;
         }
-        let scan = scan_slots(&store.load_slots(), balance);
+        let scan = scan_slots_with(&store.load_slots(), balance, reincarnation);
         for (slot, e) in &scan.rejected {
             warn!("セーブ {slot:?} を使わない: {e}");
         }

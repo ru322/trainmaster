@@ -16,6 +16,7 @@ pub(crate) use track::{TileBits, TrackGrid, lay_track, walk_track};
 pub(crate) use train::{Direction, Train, TrainPhase};
 
 use crate::geom::GridPos;
+use crate::reincarnation::ReincarnationBonuses;
 use crate::rng::RngStreams;
 use crate::routing::Routing;
 use crate::time::Tick;
@@ -49,6 +50,8 @@ pub(crate) struct GameState {
     pub progress: Progress,
     pub stats: Stats,
     pub rng: RngStreams,
+    /// 転生の進化の効果(転生の状態から作り直す。`state_hash` には入れない)。
+    pub bonuses: ReincarnationBonuses,
     /// 導出: 経路表と要再計算の印。
     pub routing: Routing,
     pub map_revision: u64,

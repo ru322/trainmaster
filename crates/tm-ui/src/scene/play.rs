@@ -166,7 +166,15 @@ pub(crate) fn error_text(err: CommandError) -> (TextId, Option<u64>) {
         CommandError::UnknownStation(_)
         | CommandError::UnknownLine(_)
         | CommandError::ScopeMismatch { .. }
-        | CommandError::BendCountMismatch { .. } => (txt::ERR_GENERIC, None),
+        | CommandError::BendCountMismatch { .. }
+        | CommandError::ReincarnationDisabled
+        | CommandError::RebirthNotReady { .. }
+        | CommandError::RebirthCompanyLevelTooLow { .. }
+        | CommandError::UnknownEvolution(_)
+        | CommandError::EvolutionTierLocked { .. }
+        | CommandError::EvolutionPrerequisite { .. }
+        | CommandError::EvolutionMaxLevel { .. }
+        | CommandError::InsufficientSouls { .. } => (txt::ERR_GENERIC, None),
     }
 }
 

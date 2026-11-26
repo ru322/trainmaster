@@ -20,6 +20,7 @@ use crate::balance::BalanceTable;
 use crate::command::Command;
 use crate::event::GameEvent;
 use crate::ids::TrainId;
+use crate::reincarnation::{self, ReincarnationRules, ReincarnationState};
 use crate::state::GameState;
 use topology::{PassChange, TrainAnchor};
 
@@ -34,9 +35,13 @@ pub(crate) struct SimScratch {
 }
 
 /// 1 tick を進める(02 D27、10 §6.1)。`queue` は空にして領域を返す。
+#[allow(clippy::too_many_arguments, reason = "tick の手順を 1 か所に並べる")]
 pub(crate) fn run_tick(
     st: &mut GameState,
     bal: &BalanceTable,
+    seed: &mut u64,
+    meta: &mut ReincarnationState,
+    rules: &ReincarnationRules,
     queue: &mut Vec<Command>,
     sc: &mut SimScratch,
     events: &mut Vec<GameEvent>,
@@ -44,7 +49,11 @@ pub(crate) fn run_tick(
     st.tick = st.tick.next();
 
     for cmd in queue.iter() {
-        apply::apply_command(st, bal, cmd, sc, events);
+        if reincarnation::is_meta_command(cmd) {
+            reincarnation::apply_command(st, bal, seed, meta, rules, cmd, events);
+        } else {
+            apply::apply_command(st, bal, cmd, sc, events);
+        }
     }
     queue.clear();
 

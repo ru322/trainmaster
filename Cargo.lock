@@ -1082,6 +1082,7 @@ dependencies = [
  "serde",
  "tm-numeric",
  "tm-pathfind",
+ "toml",
 ]
 
 [[package]]

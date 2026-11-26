@@ -779,6 +779,7 @@ mod tests {
                 purchases: 0,
             },
             rng: RngStreams::new(SEED_A),
+            bonuses: Default::default(),
             routing: Routing::default(),
             map_revision: 0,
             #[cfg(feature = "test-support")]

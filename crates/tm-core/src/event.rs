@@ -1,6 +1,6 @@
 use crate::command::{CommandError, CommandKind, LineEnd};
 use crate::geom::GridPos;
-use crate::ids::{CompanyLevel, LineId, StationId, TrainId};
+use crate::ids::{CompanyLevel, EvolutionId, LineId, StationId, TrainId};
 use crate::param::{BuyMode, Feature, ParamKey, UpgradeScope};
 use crate::time::Ticks;
 use crate::units::{Money, People};
@@ -129,5 +129,27 @@ pub enum GameEvent {
     GoalReached {
         /// 届いたときの累計収入。
         total_earned: Money,
+    },
+    /// 転生した。会社の状態は作り直した。
+    Reincarnated {
+        /// この転生で得た魂。
+        souls_gained: u64,
+        /// 転生後の魂。
+        souls: u64,
+        /// 転生した回数。
+        rebirths: u32,
+        /// 新しい会社のシード。
+        seed: u64,
+    },
+    /// 進化を 1 レベル上げた。
+    EvolutionUnlocked {
+        /// 進化。
+        node: EvolutionId,
+        /// 上げた後のレベル。
+        level: u8,
+        /// 使った魂。
+        cost: u64,
+        /// 使った後の魂。
+        souls: u64,
     },
 }

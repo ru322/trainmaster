@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::geom::Bend;
-use crate::ids::{CompanyLevel, Level, LineId, StationId};
+use crate::ids::{CompanyLevel, EvolutionId, Level, LineId, StationId};
 use crate::param::{BuyMode, Feature, LimitKind, ParamKey, UpgradeScope};
 use crate::units::Money;
 
@@ -35,6 +35,13 @@ pub enum Command {
         /// 1 段か MAX か。
         mode: BuyMode,
     },
+    /// 転生する。会社は最初からやり直しになり、魂を得る。
+    Reincarnate,
+    /// 転生で得た魂を使って進化を 1 レベル上げる。
+    UnlockEvolution {
+        /// 進化。
+        node: EvolutionId,
+    },
 }
 
 /// 路線の端。
@@ -60,6 +67,13 @@ pub enum CommandKind {
         /// 1 段か MAX か。
         mode: BuyMode,
     },
+    /// `Command::Reincarnate`。
+    Reincarnate,
+    /// `Command::UnlockEvolution`。
+    UnlockEvolution {
+        /// 進化。
+        node: EvolutionId,
+    },
 }
 
 impl Command {
@@ -72,6 +86,8 @@ impl Command {
                 param: *param,
                 mode: *mode,
             },
+            Command::Reincarnate => CommandKind::Reincarnate,
+            Command::UnlockEvolution { node } => CommandKind::UnlockEvolution { node: *node },
         }
     }
 }
@@ -91,6 +107,8 @@ pub struct CommandPreview {
     pub new_track_tiles: u32,
     /// 新しく通過駅になる駅の数。
     pub new_pass_through: u32,
+    /// 転生のコマンドで得る、または使う魂(それ以外は 0)。
+    pub souls: u64,
 }
 
 /// コマンドを拒否した理由。検査の順は 10 §5.3(存在と形式 → 解放 → 対象 → お金)。
@@ -164,6 +182,58 @@ pub enum CommandError {
         required: Money,
         /// 所持金。
         available: Money,
+    },
+    /// 転生が設定で無効。
+    ReincarnationDisabled,
+    /// 転生できる累計収入に届いていない。
+    RebirthNotReady {
+        /// 必要な累計収入。
+        required: Money,
+        /// いまの累計収入。
+        available: Money,
+    },
+    /// 転生できる会社レベルに届いていない。
+    RebirthCompanyLevelTooLow {
+        /// 必要な会社レベル。
+        required: CompanyLevel,
+        /// いまの会社レベル。
+        current: CompanyLevel,
+    },
+    /// 設定にない進化。
+    UnknownEvolution(EvolutionId),
+    /// 進化の段階がまだ解放されていない。
+    EvolutionTierLocked {
+        /// 必要な段階。
+        tier: u8,
+        /// 必要な転生回数。
+        required_rebirths: u32,
+        /// 必要な累計の魂。
+        required_lifetime_souls: u64,
+        /// いまの転生回数。
+        rebirths: u32,
+        /// いまの累計の魂。
+        lifetime_souls: u64,
+    },
+    /// 前提の進化がまだない。
+    EvolutionPrerequisite {
+        /// 上げたい進化。
+        node: EvolutionId,
+        /// 足りない前提。
+        prerequisite: EvolutionId,
+    },
+    /// 進化が最大レベル。
+    EvolutionMaxLevel {
+        /// 進化。
+        node: EvolutionId,
+        /// いまのレベル。
+        level: u8,
+    },
+    /// 魂が足りない。
+    InsufficientSouls {
+        /// 必要な魂。
+        required: u64,
+        /// いまの魂。
+        available: u64,
     },
 }
 

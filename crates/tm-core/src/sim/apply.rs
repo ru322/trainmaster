@@ -63,6 +63,7 @@ impl CheckedCommand {
                 track_tiles: p.track_tiles,
                 new_track_tiles: p.track.new_tiles,
                 new_pass_through: p.new_pass_through,
+                souls: 0,
             },
             CheckedCommand::ExtendLine(p) => CommandPreview {
                 cost: p.track.cost,
@@ -71,6 +72,7 @@ impl CheckedCommand {
                 track_tiles: p.new_len,
                 new_track_tiles: p.track.new_tiles,
                 new_pass_through: u32::from(!p.new_is_stop),
+                souls: 0,
             },
             CheckedCommand::LevelUp(p) => p.preview(),
         }
@@ -95,6 +97,9 @@ pub(crate) fn check_command(
         } => check_extend(st, bal, (*line, *end, *station, *bend)).map(CheckedCommand::ExtendLine),
         Command::LevelUp { param, scope, mode } => {
             plan_purchase(st, bal, *param, *scope, *mode).map(CheckedCommand::LevelUp)
+        }
+        Command::Reincarnate | Command::UnlockEvolution { .. } => {
+            unreachable!("転生のコマンドは reincarnation が検査する")
         }
     }
 }
@@ -128,7 +133,9 @@ fn price_track(
     segs: impl IntoIterator<Item = (GridPos, GridPos, Bend)>,
 ) -> Result<TrackPrice, CommandError> {
     let new_tiles = count_new_tiles(&st.tracks, segs);
-    let cost = bal.track_cost(st.company.level, st.company.track_tiles, new_tiles);
+    let cost =
+        st.bonuses
+            .track_cost(bal.track_cost(st.company.level, st.company.track_tiles, new_tiles));
     if st.money.total_cmp(&cost) == Ordering::Less {
         return Err(CommandError::InsufficientFunds {
             required: cost,

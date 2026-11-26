@@ -106,6 +106,7 @@ impl PurchasePlan {
             track_tiles: 0,
             new_track_tiles: 0,
             new_pass_through: 0,
+            souls: 0,
         }
     }
 }
@@ -160,7 +161,8 @@ fn plan(
         let mut step_cost = Money::ZERO;
         let mut n = 0u32;
         for t in tg.as_slice().iter().filter(|t| t.cur < t.limit) {
-            step_cost = step_cost.saturating_add(bal.upgrade_cost(p, t.cur, t.born));
+            step_cost = step_cost
+                .saturating_add(st.bonuses.upgrade_cost(bal.upgrade_cost(p, t.cur, t.born)));
             n += 1;
         }
         if n == 0 {

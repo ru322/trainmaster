@@ -717,7 +717,10 @@ impl PlayScene {
             }
             GameEvent::StationSpawned { id, .. } => self.anims.station_spawned(now, id),
             GameEvent::TrainAdded { train, .. } => self.anims.train_added(now, train),
-            GameEvent::PassThroughResolved { .. } | GameEvent::RoutesRecomputed { .. } => {}
+            GameEvent::PassThroughResolved { .. }
+            | GameEvent::RoutesRecomputed { .. }
+            | GameEvent::Reincarnated { .. }
+            | GameEvent::EvolutionUnlocked { .. } => {}
         }
     }
 

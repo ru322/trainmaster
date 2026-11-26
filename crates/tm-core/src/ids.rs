@@ -44,6 +44,11 @@ entity_id!(
     TrainId,
     "T"
 );
+entity_id!(
+    /// 転生の進化。設定の `nodes` の並びの添字。
+    EvolutionId,
+    "E"
+);
 
 /// パラメータのレベル。0 から上がるだけ。最大値は `BalanceTable` の検証で 255 未満。
 #[derive(
