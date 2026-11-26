@@ -68,7 +68,7 @@ description = "tm-launch の模擬テスト(終了コード 10 の sync・powero
 run = "scripts/test-tm-launch.sh"
 
 [tasks.run]
-description = "開発機でゲームを起動(キーボード操作。フルスクリーンで、F11 でウィンドウと切り替え。TM_DISPLAY=window ならウィンドウで始める)。開発用の機能 devtools を有効にする(16 APP-D-04)"
+description = "開発機でゲームを起動(キーボード操作。ウィンドウで始まり、F11 でフルスクリーンと切り替え。TM_DISPLAY=fullscreen ならフルスクリーンで始める)。開発用の機能 devtools を有効にする(16 APP-D-04)"
 run = "cargo run --locked -p tm-app --bin trainmaster --features devtools"
 
 [tasks."build:release"]

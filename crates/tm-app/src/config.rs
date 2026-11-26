@@ -73,7 +73,7 @@ pub enum ExitAction {
 /// 表示の方式(`SdlConfig::display` に写す)。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DisplayChoice {
-    /// ビデオのドライバで決める(画面のない dummy・offscreen は 1280×720 のウィンドウ、それ以外は KMSDRM も開発機もフルスクリーン)。
+    /// ビデオのドライバで決める(画面のない dummy・offscreen は 1280×720 のウィンドウ、それ以外はフルスクリーン)。
     Auto,
     /// デスクトップの解像度のフルスクリーン。
     Fullscreen,
@@ -89,7 +89,7 @@ pub enum DisplayChoice {
 pub struct PlatformEnv {
     /// `SDL_VIDEODRIVER=kmsdrm`(実機の既定を使う)。
     pub target: bool,
-    /// 表示の方式。
+    /// 表示の方式。実機の既定は `Auto`(フルスクリーン)、開発機の既定は `Windowed`。
     pub display: DisplayChoice,
     /// ウィンドウの倍率(`TM_WINDOW_SCALE`、640×360 の何倍か)。フルスクリーンから F11 で戻るウィンドウにも使う。
     pub window_scale: u8,
@@ -225,7 +225,11 @@ fn platform_env(env: &mut Env) -> PlatformEnv {
             "window" => Some(DisplayChoice::Windowed { scale }),
             _ => None,
         })
-        .unwrap_or(DisplayChoice::Auto);
+        .unwrap_or(if target {
+            DisplayChoice::Auto
+        } else {
+            DisplayChoice::Windowed { scale }
+        });
     let fps30 = env
         .parse("TM_FPS", |s| match s {
             "60" => Some(false),

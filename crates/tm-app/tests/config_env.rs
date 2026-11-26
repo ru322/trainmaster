@@ -41,7 +41,7 @@ fn invalid(var: &'static str, value: &str) -> ConfigWarning {
 fn dev_default() -> PlatformEnv {
     PlatformEnv {
         target: false,
-        display: DisplayChoice::Auto,
+        display: DisplayChoice::Windowed { scale: 2 },
         window_scale: 2,
         fps30: false,
         vsync: true,
