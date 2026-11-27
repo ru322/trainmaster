@@ -96,6 +96,7 @@ pub(crate) fn world(
             purchases: 0,
         },
         rng: RngStreams::new(1),
+        bonuses: Default::default(),
         routing: Routing::default(),
         map_revision: 0,
         #[cfg(feature = "test-support")]

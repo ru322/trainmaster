@@ -124,7 +124,8 @@ fn auto_display_is_fullscreen_except_on_headless_drivers() {
     );
     assert_eq!(
         crate::config::SdlConfig::dev_default().display,
-        DisplayMode::Auto
+        DisplayMode::Windowed { scale: 2 },
+        "開発機の既定はウィンドウ(フルスクリーンは TM_DISPLAY=fullscreen)"
     );
 }
 

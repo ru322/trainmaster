@@ -133,7 +133,9 @@ pub(crate) fn sound_for_event(ev: &GameEvent) -> Option<SoundRequest> {
         GameEvent::TrainAdded { .. }
         | GameEvent::PassThroughResolved { .. }
         | GameEvent::FeatureUnlocked { .. }
-        | GameEvent::RoutesRecomputed { .. } => None,
+        | GameEvent::RoutesRecomputed { .. }
+        | GameEvent::Reincarnated { .. }
+        | GameEvent::EvolutionUnlocked { .. } => None,
     }
 }
 

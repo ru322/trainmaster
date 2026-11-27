@@ -508,8 +508,8 @@ fn hash_golden() {
     assert_eq!(b.state_hash(), BUSY_HASH_GOLDEN, "{:#018x}", b.state_hash());
 }
 
-const INITIAL_HASH_GOLDEN: u64 = 0x52e7_5b03_7f87_2b41;
-const BUSY_HASH_GOLDEN: u64 = 0x3e5b_d884_3e36_bf67;
+const INITIAL_HASH_GOLDEN: u64 = 0xe7d3_c622_8ce7_303c;
+const BUSY_HASH_GOLDEN: u64 = 0x6eb0_888f_24ed_d7b6;
 
 #[test]
 fn unlocked_matches_company_level_zero() {

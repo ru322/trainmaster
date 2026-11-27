@@ -14,6 +14,7 @@ use crate::ids::{CompanyLevel, Level, StationId};
 use crate::invariants::{self, InvariantViolation, MonotonicSnapshot};
 use crate::mapgen::plan_stations;
 use crate::param::{ParamSet, StationLevels};
+use crate::reincarnation::{self, ReincarnationBonuses, ReincarnationRules, ReincarnationState};
 use crate::rng::RngStreams;
 use crate::routing::Routing;
 use crate::sim::{self, SimScratch};
@@ -39,17 +40,39 @@ pub struct GameConfig {
 pub struct Game {
     pub(crate) config: GameConfig,
     pub(crate) state: GameState,
+    /// 転生しても残る状態。
+    pub(crate) reincarnation: ReincarnationState,
+    /// 転生の設定。
+    pub(crate) reincarnation_rules: Arc<ReincarnationRules>,
     queue: Vec<Command>,
     scratch: SimScratch,
 }
 
 impl Game {
-    /// 新しいゲーム。失敗しない(10 TD-06)。経路表は初期状態から作り、イベントは出さない。
+    /// 新しいゲーム。転生の設定は埋め込みのもの。失敗しない(10 TD-06)。
     pub fn new(config: GameConfig) -> Self {
+        Game::new_with_reincarnation(config, Arc::new(ReincarnationRules::builtin()))
+    }
+
+    /// 設定ファイルから読んだ転生の設定で新しいゲームを作る。
+    pub fn new_with_reincarnation(
+        config: GameConfig,
+        reincarnation_rules: Arc<ReincarnationRules>,
+    ) -> Self {
+        let meta = ReincarnationState::new(reincarnation_rules.node_count());
+        Game::new_with_reincarnation_state(config, reincarnation_rules, meta)
+    }
+
+    /// 転生の状態も指定して新しいゲームを作る(テストと「続きから」用)。
+    pub fn new_with_reincarnation_state(
+        config: GameConfig,
+        reincarnation_rules: Arc<ReincarnationRules>,
+        meta: ReincarnationState,
+    ) -> Self {
         let bal = &*config.balance;
         let spec = bal.spec();
         let plan = plan_stations(config.seed, &spec.map, &spec.company, bal.max_stations());
-        Game::from_plan(config, plan)
+        Game::from_plan(config, reincarnation_rules, meta, plan)
     }
 
     /// テスト用: 駅の位置と出現順を指定して作る(`plan.len() == max_stations`)。
@@ -60,27 +83,57 @@ impl Game {
             config.balance.max_stations() as usize,
             "station_plan の長さは max_stations"
         );
-        Game::from_plan(config, plan)
+        let rules = Arc::new(ReincarnationRules::builtin());
+        let meta = ReincarnationState::new(rules.node_count());
+        Game::from_plan(config, rules, meta, plan)
     }
 
     /// キューと作業領域が空の `Game`(`restore` が使う)。
-    pub(crate) fn from_state(config: GameConfig, state: GameState) -> Self {
+    pub(crate) fn from_state(
+        config: GameConfig,
+        reincarnation_rules: Arc<ReincarnationRules>,
+        reincarnation: ReincarnationState,
+        state: GameState,
+    ) -> Self {
         Game {
             config,
             state,
+            reincarnation,
+            reincarnation_rules,
             queue: Vec::new(),
             scratch: SimScratch::default(),
         }
     }
 
-    fn from_plan(config: GameConfig, plan: Vec<GridPos>) -> Self {
-        let state = initial_state(config.seed, &config.balance, plan);
-        let game = Game::from_state(config, state);
+    fn from_plan(
+        config: GameConfig,
+        reincarnation_rules: Arc<ReincarnationRules>,
+        reincarnation: ReincarnationState,
+        plan: Vec<GridPos>,
+    ) -> Self {
+        let bonuses = reincarnation.bonuses(&reincarnation_rules);
+        let state = initial_state(config.seed, &config.balance, plan, bonuses);
+        let game = Game::from_state(config, reincarnation_rules, reincarnation, state);
         #[cfg(debug_assertions)]
         if let Err(v) = game.check_invariants() {
             panic!("初期状態で {} が破れた: {}", v.id, v.detail);
         }
         game
+    }
+
+    /// 転生しても残る状態。
+    pub fn reincarnation(&self) -> &ReincarnationState {
+        &self.reincarnation
+    }
+
+    /// 転生の設定。
+    pub fn reincarnation_rules(&self) -> &ReincarnationRules {
+        &self.reincarnation_rules
+    }
+
+    /// 転生の状態のハッシュ(セーブの照合に使う)。
+    pub fn reincarnation_hash(&self) -> u64 {
+        self.reincarnation.hash()
     }
 
     /// 設定。
@@ -90,6 +143,14 @@ impl Game {
 
     /// 状態を変えずに検査する(10 §5.4)。
     pub fn validate(&self, cmd: &Command) -> Result<CommandPreview, CommandError> {
+        if reincarnation::is_meta_command(cmd) {
+            return reincarnation::validate_command(
+                &self.state,
+                &self.reincarnation,
+                &self.reincarnation_rules,
+                cmd,
+            );
+        }
         sim::check_command(&self.state, &self.config.balance, cmd).map(|c| c.preview())
     }
 
@@ -108,6 +169,9 @@ impl Game {
         sim::run_tick(
             &mut self.state,
             &self.config.balance,
+            &mut self.config.seed,
+            &mut self.reincarnation,
+            &self.reincarnation_rules,
             &mut self.queue,
             &mut self.scratch,
             events,
@@ -203,7 +267,12 @@ impl PaxLedgerView {
     }
 }
 
-fn initial_state(seed: u64, bal: &BalanceTable, plan: Vec<GridPos>) -> GameState {
+pub(crate) fn initial_state(
+    seed: u64,
+    bal: &BalanceTable,
+    plan: Vec<GridPos>,
+    bonuses: ReincarnationBonuses,
+) -> GameState {
     let spec = bal.spec();
     let base = usize::from(spec.company.stations_base);
     let stations: Vec<Station> = plan[..base]
@@ -223,7 +292,7 @@ fn initial_state(seed: u64, bal: &BalanceTable, plan: Vec<GridPos>) -> GameState
     for _ in &stations {
         waiting.push_row();
     }
-    let money = bal.initial_money();
+    let money = bal.initial_money().saturating_add(bonuses.start_money());
     let mut st = GameState {
         tick: Tick::ZERO,
         money,
@@ -255,6 +324,7 @@ fn initial_state(seed: u64, bal: &BalanceTable, plan: Vec<GridPos>) -> GameState
             purchases: 0,
         },
         rng: RngStreams::new(seed),
+        bonuses,
         routing: Routing::default(),
         map_revision: 0,
         #[cfg(feature = "test-support")]

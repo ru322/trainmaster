@@ -4,8 +4,8 @@ use log::{Level, LevelFilter, Log, Record};
 use tm_app::logging::{LINE_MAX_BYTES, RING_LINES, RingLogger, parse_level};
 use tm_app::seed::{mix, splitmix64};
 use tm_app::{
-    AppConfig, ConfigWarning, DEVTOOLS_VARS, DisplayChoice, ExitAction, PlatformEnv, ReplayPolicy,
-    SavePolicy, SeedPolicy, SeedSource,
+    AppConfig, AppError, ConfigWarning, DEVTOOLS_VARS, DisplayChoice, ExitAction, PlatformEnv,
+    ReplayPolicy, SavePolicy, SeedPolicy, SeedSource,
 };
 use tm_platform_api::MonoTime;
 
@@ -41,7 +41,7 @@ fn invalid(var: &'static str, value: &str) -> ConfigWarning {
 fn dev_default() -> PlatformEnv {
     PlatformEnv {
         target: false,
-        display: DisplayChoice::Auto,
+        display: DisplayChoice::Windowed { scale: 2 },
         window_scale: 2,
         fps30: false,
         vsync: true,
@@ -438,4 +438,35 @@ fn app_t_20_ring_logger() {
     assert!(long.len() <= LINE_MAX_BYTES && long.len() > LINE_MAX_BYTES - 3);
     assert!(long.ends_with('あ'), "文字の途中で切らない");
     assert_eq!(tm_app::logging::recent(5).len(), 0, "init の前は空");
+}
+
+#[test]
+fn reincarnation_config_is_a_file() {
+    let path = std::env::temp_dir().join(format!(
+        "tm-app-reincarnation-{}-{}.toml",
+        std::process::id(),
+        std::line!()
+    ));
+    std::fs::write(&path, "format_version = 1\n[gain]\nbase = 9\n").unwrap();
+    let (app, _, warnings) = env(&[("TM_REINCARNATION_FILE", path.to_str().unwrap())]);
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert_eq!(app.reincarnation.spec().gain.base, 9);
+    std::fs::remove_file(&path).unwrap();
+
+    let broken = std::env::temp_dir().join(format!(
+        "tm-app-reincarnation-broken-{}",
+        std::process::id()
+    ));
+    std::fs::write(&broken, "format_version = 1\n[gain]\nbase = \"x\"\n").unwrap();
+    let vars = [("TM_REINCARNATION_FILE", broken.to_str().unwrap())];
+    let err = AppConfig::from_env(vars.iter().map(|(k, v)| (k.to_string(), v.to_string())))
+        .expect_err("読めない設定はエラー");
+    assert!(matches!(err, AppError::Reincarnation(_)), "{err:?}");
+    std::fs::remove_file(&broken).unwrap();
+
+    let missing = std::env::temp_dir().join("tm-app-reincarnation-does-not-exist.toml");
+    let vars = [("TM_REINCARNATION_FILE", missing.to_str().unwrap())];
+    let err = AppConfig::from_env(vars.iter().map(|(k, v)| (k.to_string(), v.to_string())))
+        .expect_err("ないファイルはエラー");
+    assert!(matches!(err, AppError::Config(_)), "{err:?}");
 }

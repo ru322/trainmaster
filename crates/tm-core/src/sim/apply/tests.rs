@@ -186,7 +186,8 @@ fn previews_of_line_commands() {
             raised: 0,
             track_tiles: 4 + 4,
             new_track_tiles: 9,
-            new_pass_through: 0
+            new_pass_through: 0,
+            souls: 0,
         }
     );
     let b = custom(|s| s.params[8].unlock = 0);

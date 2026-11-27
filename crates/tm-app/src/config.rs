@@ -5,7 +5,7 @@ use std::fmt;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use tm_core::BalanceTable;
+use tm_core::{BalanceTable, ReincarnationRules};
 use tm_input::Bindings;
 
 use crate::error::AppError;
@@ -20,6 +20,8 @@ use crate::version::VersionInfo;
 pub struct AppConfig {
     /// ゲームの数値の表(既定は埋め込み)。
     pub balance: Arc<BalanceTable>,
+    /// 転生の設定(既定は埋め込みの `config/reincarnation.toml`)。
+    pub reincarnation: Arc<ReincarnationRules>,
     /// キー割り当て(v1 は `Bindings::default_v1()` だけ。APP-D-10)。
     pub bindings: Bindings,
     /// シードの決め方。
@@ -44,6 +46,7 @@ impl Default for AppConfig {
     fn default() -> Self {
         AppConfig {
             balance: Arc::new(BalanceTable::builtin()),
+            reincarnation: Arc::new(ReincarnationRules::builtin()),
             bindings: Bindings::default_v1(),
             seed: SeedPolicy::Os,
             replay: ReplayPolicy::Off,
@@ -70,7 +73,7 @@ pub enum ExitAction {
 /// 表示の方式(`SdlConfig::display` に写す)。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DisplayChoice {
-    /// ビデオのドライバで決める(画面のない dummy・offscreen は 1280×720 のウィンドウ、それ以外は KMSDRM も開発機もフルスクリーン)。
+    /// ビデオのドライバで決める(画面のない dummy・offscreen は 1280×720 のウィンドウ、それ以外はフルスクリーン)。
     Auto,
     /// デスクトップの解像度のフルスクリーン。
     Fullscreen,
@@ -86,7 +89,7 @@ pub enum DisplayChoice {
 pub struct PlatformEnv {
     /// `SDL_VIDEODRIVER=kmsdrm`(実機の既定を使う)。
     pub target: bool,
-    /// 表示の方式。
+    /// 表示の方式。実機の既定は `Auto`(フルスクリーン)、開発機の既定は `Windowed`。
     pub display: DisplayChoice,
     /// ウィンドウの倍率(`TM_WINDOW_SCALE`、640×360 の何倍か)。フルスクリーンから F11 で戻るウィンドウにも使う。
     pub window_scale: u8,
@@ -222,7 +225,11 @@ fn platform_env(env: &mut Env) -> PlatformEnv {
             "window" => Some(DisplayChoice::Windowed { scale }),
             _ => None,
         })
-        .unwrap_or(DisplayChoice::Auto);
+        .unwrap_or(if target {
+            DisplayChoice::Auto
+        } else {
+            DisplayChoice::Windowed { scale }
+        });
     let fps30 = env
         .parse("TM_FPS", |s| match s {
             "60" => Some(false),
@@ -332,6 +339,18 @@ fn exit_action(env: &mut Env) -> ExitAction {
     }
 }
 
+/// `TM_REINCARNATION_FILE`: 転生の設定の TOML。配布用のビルドでも読む。
+fn reincarnation_config(env: &mut Env, app: &mut AppConfig) -> Result<(), AppError> {
+    if let Some(path) = env.raw("TM_REINCARNATION_FILE") {
+        let src = std::fs::read_to_string(&path).map_err(|e| {
+            AppError::Config(format!("TM_REINCARNATION_FILE={path} を読めない: {e}"))
+        })?;
+        app.reincarnation =
+            Arc::new(ReincarnationRules::from_toml_str(&src).map_err(AppError::Reincarnation)?);
+    }
+    Ok(())
+}
+
 fn devtools(env: &mut Env, app: &mut AppConfig, penv: &mut PlatformEnv) -> Result<(), AppError> {
     penv.dev_hotkeys = env.on_off("TM_DEV_HOTKEYS");
     if let Some(s) = env.parse("TM_SEED", parse_seed) {
@@ -376,6 +395,7 @@ impl AppConfig {
         let mut penv = platform_env(&mut env);
         app.save = save_policy(&mut env);
         app.exit_action = exit_action(&mut env);
+        reincarnation_config(&mut env, &mut app)?;
         if cfg!(feature = "devtools") {
             devtools(&mut env, &mut app, &mut penv)?;
         } else {

@@ -100,8 +100,8 @@ mod tests {
         );
         assert_eq!(
             launch(&[("TM_WINDOW_SCALE", "4")]).display,
-            DisplayMode::Auto,
-            "開発機の既定はフルスクリーン(ウィンドウは TM_DISPLAY=window)"
+            DisplayMode::Windowed { scale: 4 },
+            "開発機の既定はウィンドウ(フルスクリーンは TM_DISPLAY=fullscreen)"
         );
         assert_eq!(
             launch(&[("TM_WINDOW_SCALE", "4")]).window_scale,

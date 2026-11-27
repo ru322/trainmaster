@@ -60,7 +60,10 @@ fn arrive(st: &mut GameState, bal: &BalanceTable, tid: TrainId) -> ArrivalOutcom
     let ns = turn_at_arrival(line, &mut st.trains[ti]);
 
     let riders = st.trains[ti].riders;
-    let income = fare_income(riders, bal.fare(st.stations[s.index()].levels.fare));
+    let income = st.bonuses.fare_income(fare_income(
+        riders,
+        bal.fare(st.stations[s.index()].levels.fare),
+    ));
     book_income(st, income);
 
     let cols = st.onboard.cols();

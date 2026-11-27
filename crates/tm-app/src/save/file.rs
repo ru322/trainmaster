@@ -5,7 +5,9 @@ use std::sync::Arc;
 
 use ron::ser::PrettyConfig;
 use serde::{Deserialize, Serialize};
-use tm_core::{BalanceTable, Game, GameSnapshot, RULES_VERSION, SnapshotError, StateHasher};
+use tm_core::{
+    BalanceTable, Game, GameSnapshot, RULES_VERSION, ReincarnationRules, SnapshotError, StateHasher,
+};
 use tm_tutorial::TutorialSave;
 
 /// ヘッダ・本体の形か `TutorialSave`(段階の表を含む)を変えたら上げる。
@@ -239,9 +241,32 @@ impl SaveFile {
     }
 
     /// `decode` に加えて `Game::restore`(導出データ、不変条件、`state_hash`)まで通す。
+    /// 転生の設定は埋め込みのもの。
     pub fn load(bytes: &[u8], balance: &Arc<BalanceTable>) -> Result<Loaded, SaveError> {
         let f = Self::decode(bytes, balance)?;
         let game = Game::restore(Arc::clone(balance), &f.body.game).map_err(SaveError::Snapshot)?;
+        Ok(Loaded {
+            seq: f.header.seq,
+            seed: game.config().seed,
+            game,
+            tutorial: f.body.tutorial,
+            game_version: f.header.game_version,
+        })
+    }
+
+    /// 転生の設定を指定して `decode` と `Game::restore` まで通す。
+    pub fn load_with(
+        bytes: &[u8],
+        balance: &Arc<BalanceTable>,
+        reincarnation: &Arc<ReincarnationRules>,
+    ) -> Result<Loaded, SaveError> {
+        let f = Self::decode(bytes, balance)?;
+        let game = Game::restore_with_reincarnation(
+            Arc::clone(balance),
+            Arc::clone(reincarnation),
+            &f.body.game,
+        )
+        .map_err(SaveError::Snapshot)?;
         Ok(Loaded {
             seq: f.header.seq,
             seed: game.config().seed,
@@ -280,7 +305,7 @@ fn split(bytes: &[u8]) -> Result<(SaveHeader, &[u8]), SaveError> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use tm_core::{GameConfig, GameEvent};
+    use tm_core::{GameConfig, GameEvent, ReincarnationRules, ReincarnationState};
     use tm_tutorial::Tutorial;
 
     pub(crate) fn game(seed: u64, ticks: u64) -> Game {
@@ -438,6 +463,42 @@ pub(crate) mod tests {
         for e in [SaveError::HeaderMismatch, SaveError::Format { found: 2 }] {
             assert!(!e.to_string().is_empty());
         }
+    }
+
+    #[test]
+    fn reincarnation_state_is_saved_and_checked() {
+        let bal = Arc::new(BalanceTable::builtin());
+        let rules = Arc::new(ReincarnationRules::builtin());
+        let mut meta = ReincarnationState::new(rules.node_count());
+        meta.souls = 4;
+        meta.lifetime_souls = 9;
+        meta.spent_souls = 5;
+        meta.rebirths = 1;
+        meta.raise(rules.node_id("seed_capital").unwrap());
+        let g = Game::new_with_reincarnation_state(
+            GameConfig {
+                seed: 7,
+                balance: Arc::clone(&bal),
+            },
+            Arc::clone(&rules),
+            meta,
+        );
+        let b =
+            SaveFile::encode(1, &g.snapshot(), &Tutorial::new(true).save(), "test").into_bytes();
+        let l = SaveFile::load_with(&b, &bal, &rules).expect("転生の状態も読める");
+        assert_eq!(l.game.reincarnation(), g.reincarnation());
+        assert_eq!(l.game.reincarnation_hash(), g.reincarnation_hash());
+        assert_eq!(l.game.state_hash(), g.state_hash());
+
+        let mut spec = rules.spec().clone();
+        spec.gain.base += 1;
+        let other = Arc::new(ReincarnationRules::from_spec(spec).unwrap());
+        assert!(matches!(
+            SaveFile::load_with(&b, &bal, &other),
+            Err(SaveError::Snapshot(
+                tm_core::SnapshotError::ReincarnationConfigMismatch { .. }
+            ))
+        ));
     }
 
     #[test]

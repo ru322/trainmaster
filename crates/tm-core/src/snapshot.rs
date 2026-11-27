@@ -12,6 +12,7 @@ use crate::geom::{Bend, GridPos};
 use crate::ids::{CompanyLevel, Level, LineId, StationId, TrainId};
 use crate::invariants::InvariantViolation;
 use crate::param::{FeatureSet, LineLevels, ParamKey, ParamSet, StationLevels};
+use crate::reincarnation::{ReincarnationBonuses, ReincarnationRules, ReincarnationState};
 use crate::rng::{RngStreams, STREAM_PASSENGER_DEST, StreamRng};
 use crate::routing::Routing;
 use crate::sim;
@@ -23,6 +24,7 @@ use crate::time::{Tick, Ticks};
 use crate::units::{MilliPeople, Money, PosUnits};
 
 /// `GameSnapshot` の形の版。フィールドや意味を変えたら上げる。2 = `SnapLine::born_level`(M8)。
+/// 転生の 3 つの欄は空なら書かない省略可能な欄なので、版は 2 のまま。
 pub const SNAPSHOT_FORMAT_VERSION: u32 = 2;
 
 // restore の後の step で足し込みがあふれないための上限。どれも 1 週間の遊びより何桁も大きい。
@@ -72,6 +74,75 @@ pub struct GameSnapshot {
     pub passenger_dest_words: u64,
     /// 静的なマップ層の版。
     pub map_revision: u64,
+    /// 転生しても残る状態。空なら省略する(前の版の写しと互換)。
+    #[serde(default, skip_serializing_if = "SnapReincarnation::is_empty")]
+    pub reincarnation: SnapReincarnation,
+    /// 転生の設定のハッシュ。転生の状態が空なら 0。
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub reincarnation_config_hash: u64,
+    /// 転生の状態のハッシュ。転生の状態が空なら 0。
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub reincarnation_hash: u64,
+}
+
+fn is_zero(v: &u64) -> bool {
+    *v == 0
+}
+
+/// 転生しても残る状態の写し。
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SnapReincarnation {
+    /// 使っていない魂。
+    #[serde(default)]
+    pub souls: u64,
+    /// これまでもらった魂の合計。
+    #[serde(default)]
+    pub lifetime_souls: u64,
+    /// これまで進化に使った魂の合計。
+    #[serde(default)]
+    pub spent_souls: u64,
+    /// 転生した回数。
+    #[serde(default)]
+    pub rebirths: u32,
+    /// ノードごとのレベル。
+    #[serde(default)]
+    pub nodes: Vec<u8>,
+}
+
+impl SnapReincarnation {
+    /// 何も残っていないか。
+    pub fn is_empty(&self) -> bool {
+        self.souls == 0
+            && self.lifetime_souls == 0
+            && self.spent_souls == 0
+            && self.rebirths == 0
+            && self.nodes.iter().all(|&l| l == 0)
+    }
+
+    fn from_state(s: &ReincarnationState) -> Self {
+        SnapReincarnation {
+            souls: s.souls,
+            lifetime_souls: s.lifetime_souls,
+            spent_souls: s.spent_souls,
+            rebirths: s.rebirths,
+            // 空の状態はノードの数も書かない(前の版の写しと同じ形)。
+            nodes: if s.is_empty() {
+                Vec::new()
+            } else {
+                s.nodes.clone()
+            },
+        }
+    }
+
+    fn to_state(&self) -> ReincarnationState {
+        ReincarnationState {
+            souls: self.souls,
+            lifetime_souls: self.lifetime_souls,
+            spent_souls: self.spent_souls,
+            rebirths: self.rebirths,
+            nodes: self.nodes.clone(),
+        }
+    }
 }
 
 /// 会社の写し。
@@ -205,6 +276,20 @@ pub enum SnapshotError {
         /// いまの表の値。
         actual: u64,
     },
+    /// 転生の設定のハッシュが違う。
+    ReincarnationConfigMismatch {
+        /// 写しの値。
+        expected: u64,
+        /// いまの設定の値。
+        actual: u64,
+    },
+    /// 転生の状態のハッシュが違う。
+    ReincarnationHashMismatch {
+        /// 写しの値。
+        expected: u64,
+        /// 作り直した状態の値。
+        actual: u64,
+    },
     /// 長さ・ID・範囲・お金のビット列が合わない。
     Malformed {
         /// 何が合わないか。
@@ -258,12 +343,33 @@ impl Game {
             stats: snap_stats(&st.stats),
             passenger_dest_words: st.rng.passenger_dest.words(),
             map_revision: st.map_revision,
+            reincarnation: SnapReincarnation::from_state(&self.reincarnation),
+            reincarnation_config_hash: if self.reincarnation.is_empty() {
+                0
+            } else {
+                self.reincarnation_rules.config_hash()
+            },
+            reincarnation_hash: if self.reincarnation.is_empty() {
+                0
+            } else {
+                self.reincarnation.hash()
+            },
         }
     }
 
-    /// 写しから作り直す(10 §9.4、11 §9.3)。シードは写しのもの。導出データを作り直し、不変条件と
-    /// `state_hash` を照合する。どんな写しでも panic せず、合わなければ `Err`。
+    /// 写しから作り直す(10 §9.4、11 §9.3)。転生の設定は埋め込みのもの。
+    /// 設定ファイルから読んだ設定で作ったゲームは [`Game::restore_with_reincarnation`] を使う。
     pub fn restore(balance: Arc<BalanceTable>, snap: &GameSnapshot) -> Result<Game, SnapshotError> {
+        Game::restore_with_reincarnation(balance, Arc::new(ReincarnationRules::builtin()), snap)
+    }
+
+    /// 写しから作り直す(10 §9.4、11 §9.3)。シードは写しのもの。導出データを作り直し、不変条件と
+    /// `state_hash`・転生のハッシュを照合する。どんな写しでも panic せず、合わなければ `Err`。
+    pub fn restore_with_reincarnation(
+        balance: Arc<BalanceTable>,
+        reincarnation_rules: Arc<ReincarnationRules>,
+        snap: &GameSnapshot,
+    ) -> Result<Game, SnapshotError> {
         if snap.format != SNAPSHOT_FORMAT_VERSION {
             return Err(SnapshotError::Format { found: snap.format });
         }
@@ -280,13 +386,43 @@ impl Game {
             });
         }
         let malformed = |detail| SnapshotError::Malformed { detail };
+        let meta = if snap.reincarnation.is_empty() {
+            ReincarnationState::new(reincarnation_rules.node_count())
+        } else {
+            let actual = reincarnation_rules.config_hash();
+            if snap.reincarnation_config_hash != actual {
+                return Err(SnapshotError::ReincarnationConfigMismatch {
+                    expected: snap.reincarnation_config_hash,
+                    actual,
+                });
+            }
+            if snap.reincarnation.nodes.len() != reincarnation_rules.node_count() {
+                return Err(malformed(format!(
+                    "転生のノード数 {}、設定 {}",
+                    snap.reincarnation.nodes.len(),
+                    reincarnation_rules.node_count()
+                )));
+            }
+            let meta = snap.reincarnation.to_state();
+            let actual = meta.hash();
+            if snap.reincarnation_hash != actual {
+                return Err(SnapshotError::ReincarnationHashMismatch {
+                    expected: snap.reincarnation_hash,
+                    actual,
+                });
+            }
+            meta
+        };
+        let bonuses = meta.bonuses(&reincarnation_rules);
         check_shape(snap, &balance).map_err(malformed)?;
-        let state = build_state(snap, &balance).map_err(malformed)?;
+        let state = build_state(snap, &balance, bonuses).map_err(malformed)?;
         let game = Game::from_state(
             GameConfig {
                 seed: snap.seed,
                 balance,
             },
+            reincarnation_rules,
+            meta,
             state,
         );
         game.check_invariants().map_err(SnapshotError::Invariant)?;
@@ -555,7 +691,11 @@ fn money(bits: u64, name: &str) -> Result<Money, String> {
 }
 
 /// 11 §9.3 の 2: 状態を置き、導出データを作り直す。`check_shape` を通った写しだけを渡す。
-fn build_state(s: &GameSnapshot, bal: &BalanceTable) -> Result<GameState, String> {
+fn build_state(
+    s: &GameSnapshot,
+    bal: &BalanceTable,
+    bonuses: ReincarnationBonuses,
+) -> Result<GameState, String> {
     let spec = bal.spec();
     let plan: Vec<GridPos> = s
         .station_plan
@@ -707,6 +847,7 @@ fn build_state(s: &GameSnapshot, bal: &BalanceTable) -> Result<GameState, String
                 s.passenger_dest_words,
             ),
         },
+        bonuses,
         routing: Routing::default(),
         map_revision: s.map_revision,
         #[cfg(feature = "test-support")]

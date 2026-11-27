@@ -18,10 +18,10 @@ pub(crate) fn spawn_all(st: &mut GameState, bal: &BalanceTable) {
         if count == 0 {
             continue;
         }
-        let add = spawn_per_sec(
+        let add = st.bonuses.spawn_rate(spawn_per_sec(
             bal.spawn_rate(st.stations[i].levels.spawn),
             max_stopping_attractiveness(st, bal, s),
-        );
+        ));
         let stn = &mut st.stations[i];
         let acc = stn.spawn_acc.add_sat(add).0;
         stn.spawn_acc = MilliPeople(acc % 1000);

@@ -1,0 +1,135 @@
+# 転生(プレステージ)システムの設定。
+#
+# ゲームの数値表(balance.ron)とは別のファイルにしてある。ビルドに埋め込んだこのファイルが
+# 既定で、TM_REINCARNATION_FILE で別のファイルを指定できる。
+#
+# - 規定の累計収入に届くと転生できる。
+# - 転生すると「魂(soul)」を得て、会社は最初からやり直しになる。
+# - 魂は進化(ノード)の解放に使う。魂・解放済みの進化・転生回数は転生しても残る。
+# - tiers の条件を満たすと、その段階(tier)の進化が解放される。
+
+format_version = 1
+enabled = true
+
+# 転生できる条件。累計収入 10^min_rebirth_total_earned_pow10 円以上。
+min_rebirth_total_earned_pow10 = 2
+# 会社レベルがこの値以上。
+min_rebirth_company_level = 0
+
+[gain]
+# 転生 1 回で得る魂 = base + per_company_level × 会社レベル + per_station × 駅数
+#                        + 届いた gain.tiers の souls の合計
+# そのあと、進化の soul_gain_permille を掛ける。
+base = 1
+per_company_level = 0
+per_station = 0
+
+# 累計収入 10^min_total_earned_pow10 円に届くたびに souls を足す。
+[[gain.tiers]]
+min_total_earned_pow10 = 2
+souls = 1
+
+[[gain.tiers]]
+min_total_earned_pow10 = 4
+souls = 2
+
+[[gain.tiers]]
+min_total_earned_pow10 = 6
+souls = 3
+
+[[gain.tiers]]
+min_total_earned_pow10 = 8
+souls = 5
+
+# 進化の段階。required_* はどちらも満たす必要がある。
+[[tiers]]
+level = 1
+required_rebirths = 0
+required_lifetime_souls = 0
+
+[[tiers]]
+level = 2
+required_rebirths = 1
+required_lifetime_souls = 5
+
+[[tiers]]
+level = 3
+required_rebirths = 2
+required_lifetime_souls = 15
+
+# 進化(ノード)。effects は 1 レベルあたりの加算値。
+# permille は 1000 = 1 倍。負の値は値段を下げる。
+# requires は、そのノードが 1 レベル以上あること。
+# cost_ratio_permille は 1 レベルごとの値段の倍率(1000 = 変わらない)。
+
+[[nodes]]
+id = "seed_capital"
+name = "はじまりの資金"
+tier = 1
+cost = 1
+cost_ratio_permille = 1000
+max_level = 3
+requires = []
+
+[nodes.effects]
+start_money_yen = 1000
+
+[[nodes]]
+id = "soul_echo"
+name = "魂のこだま"
+tier = 1
+cost = 2
+cost_ratio_permille = 1500
+max_level = 3
+requires = []
+
+[nodes.effects]
+soul_gain_permille = 100
+
+[[nodes]]
+id = "steady_tracks"
+name = "堅実な線路"
+tier = 2
+cost = 5
+cost_ratio_permille = 2000
+max_level = 2
+requires = ["seed_capital"]
+
+[nodes.effects]
+track_cost_permille = -100
+
+[[nodes]]
+id = "busy_platforms"
+name = "にぎわうホーム"
+tier = 2
+cost = 5
+cost_ratio_permille = 2000
+max_level = 2
+requires = ["soul_echo"]
+
+[nodes.effects]
+spawn_rate_permille = 100
+
+[[nodes]]
+id = "frugal_growth"
+name = "倹約の成長"
+tier = 3
+cost = 10
+cost_ratio_permille = 2000
+max_level = 2
+requires = ["soul_echo"]
+
+[nodes.effects]
+upgrade_cost_permille = -100
+
+[[nodes]]
+id = "deep_memory"
+name = "深い記憶"
+tier = 3
+cost = 15
+cost_ratio_permille = 2500
+max_level = 2
+requires = ["steady_tracks", "busy_platforms"]
+
+[nodes.effects]
+fare_income_permille = 150

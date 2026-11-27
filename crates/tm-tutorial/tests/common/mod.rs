@@ -704,6 +704,7 @@ impl Kid {
                     *param,
                 ))));
             }
+            Command::Reincarnate | Command::UnlockEvolution { .. } => {}
         }
         if !self.t.permits(&c) {
             self.log.refused += 1;
@@ -725,6 +726,7 @@ impl Kid {
                 )));
                 self.ui(UiEvent::MenuClosed(MenuAnchor::UpgradePanel));
             }
+            Command::Reincarnate | Command::UnlockEvolution { .. } => {}
         }
     }
 }

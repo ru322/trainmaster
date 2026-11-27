@@ -74,10 +74,10 @@ impl SdlConfig {
         }
     }
 
-    /// 開発機の既定(フルスクリーン。F11 でウィンドウと切り替え)。
+    /// 開発機の既定(ウィンドウ。F11 でフルスクリーンと切り替え)。
     pub fn dev_default() -> Self {
         SdlConfig {
-            display: DisplayMode::Auto,
+            display: DisplayMode::Windowed { scale: 2 },
             window_scale: 2,
             render_driver: None,
             vsync: true,

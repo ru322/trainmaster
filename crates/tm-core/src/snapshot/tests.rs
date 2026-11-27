@@ -206,6 +206,50 @@ fn initial_state_round_trips() {
 }
 
 #[test]
+fn reincarnation_state_round_trips() {
+    let bal = Arc::new(BalanceTable::builtin());
+    let rules = Arc::new(ReincarnationRules::builtin());
+    let mut meta = ReincarnationState::new(rules.node_count());
+    meta.souls = 7;
+    meta.lifetime_souls = 11;
+    meta.spent_souls = 4;
+    meta.rebirths = 2;
+    meta.raise(rules.node_id("seed_capital").unwrap());
+    let g = Game::new_with_reincarnation_state(
+        GameConfig {
+            seed: SEED_A,
+            balance: Arc::clone(&bal),
+        },
+        Arc::clone(&rules),
+        meta.clone(),
+    );
+    let snap = g.snapshot();
+    assert!(!snap.reincarnation.is_empty());
+    assert_eq!(snap.reincarnation_hash, meta.hash());
+    assert_eq!(snap.reincarnation_config_hash, rules.config_hash());
+    let back = Game::restore_with_reincarnation(Arc::clone(&bal), Arc::clone(&rules), &snap)
+        .expect("転生の状態も作り直せる");
+    assert_eq!(back.reincarnation(), &meta);
+    assert_eq!(back.state_hash(), g.state_hash());
+    assert_eq!(back.state.bonuses.start_money_yen, 1000);
+
+    let mut bad = snap.clone();
+    bad.reincarnation_hash ^= 1;
+    assert!(matches!(
+        Game::restore_with_reincarnation(Arc::clone(&bal), Arc::clone(&rules), &bad),
+        Err(SnapshotError::ReincarnationHashMismatch { .. })
+    ));
+
+    let mut spec = rules.spec().clone();
+    spec.gain.base += 1;
+    let other = Arc::new(ReincarnationRules::from_spec(spec).unwrap());
+    assert!(matches!(
+        Game::restore_with_reincarnation(bal, other, &snap),
+        Err(SnapshotError::ReincarnationConfigMismatch { .. })
+    ));
+}
+
+#[test]
 fn early_state_round_trips() {
     continues_identically(early());
 }
